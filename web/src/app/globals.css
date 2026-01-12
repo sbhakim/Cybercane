@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom scrollbar styles */
+.ctf-scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.ctf-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ctf-scrollable::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.ctf-scrollable::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.ctf-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Always visible scrollbar for challenges */
+.challenges-scrollable {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+  overflow-y: scroll !important;
+}
+
+.challenges-scrollable::-webkit-scrollbar {
+  width: 8px;
+  display: block !important;
+}
+
+.challenges-scrollable::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.challenges-scrollable::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.challenges-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dark mode scrollbar */
+@media (prefers-color-scheme: dark) {
+  .ctf-scrollable {
+    scrollbar-color: #475569 #1e293b;
+  }
+  
+  .ctf-scrollable::-webkit-scrollbar-track {
+    background: #1e293b;
+  }
+  
+  .ctf-scrollable::-webkit-scrollbar-thumb {
+    background: #475569;
+  }
+  
+  .ctf-scrollable::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+  
+  .challenges-scrollable {
+    scrollbar-color: #475569 #1e293b;
+  }
+  
+  .challenges-scrollable::-webkit-scrollbar-track {
+    background: #1e293b;
+  }
+  
+  .challenges-scrollable::-webkit-scrollbar-thumb {
+    background: #475569;
+  }
+  
+  .challenges-scrollable::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+}

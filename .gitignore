@@ -1,0 +1,51 @@
+# Node / Next
+web/node_modules/
+web/.next/
+web/.turbo/
+web/.swc/
+web/.cache/
+web/out/
+web/.vercel/
+
+# Python
+api/.venv/
+api/**/__pycache__/
+api/.pytest_cache/
+api/.mypy_cache/
+**/__pycache__/
+*.py[cod]
+
+# Data, reports, and manuscript artifacts (excluded for now)
+datasets/
+reports/
+Manuscript/
+docs/
+api/samples/
+*.csv
+*.pdf
+*.tex
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.md
+!README.md
+
+# Editors / IDE
+.idea/
+.vscode/
+.github/
+.gitattributes
+.npmrc
+.nvmrc
+Makefile
+bge-large.py
+
+# General
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+*.tmp

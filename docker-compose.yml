@@ -1,0 +1,108 @@
+# Dev by default (hot reload + bind mounts).
+# Use the "prod" profile for production-like runs (no bind mounts, optimized builds).
+
+services:
+  db:
+    build: ./db
+    image: hackumbc/db:17
+    # Uncomment the next line if a teammate on Apple Silicon hits image issues:
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: ./api
+    image: hackumbc/api:dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/app}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./api/app:/app/app
+      - ./datasets:/datasets
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: dev
+    image: hackumbc/web:dev
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
+      INTERNAL_API_URL: "${INTERNAL_API_URL:-http://api:8000}"
+      # Ensures hot reload works reliably on Docker for Mac/Windows
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    command: ["npm", "run", "dev"]
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+
+  # ---- Production-like variants (no bind mounts) ----
+  api-prod:
+    image: hackumbc/api:latest
+    build: ./api
+    profiles: ["prod"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/app}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+  web-prod:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: prod
+    image: hackumbc/web:latest
+    profiles: ["prod"]
+    depends_on:
+      - api-prod
+    environment:
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
+      INTERNAL_API_URL: "${INTERNAL_API_URL:-http://api:8000}"
+      NODE_ENV: "production"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    command: ["npm", "run", "start"]
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+
+volumes:
+  pgdata:
+  web_node_modules:
