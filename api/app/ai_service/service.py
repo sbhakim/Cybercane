@@ -85,13 +85,17 @@ def _embed_text(text_value: str, model: str = "text-embedding-3-small") -> List[
         raise exc
 
 
-def _nearest_neighbors(vec: List[float], limit: int = 8) -> List[NeighborOut]:
+def _nearest_neighbors(vec: List[float], limit: int = 8, *, include_benign: bool = False) -> List[NeighborOut]:
     """
     Return top-k neighbors by cosine similarity against messages.doc_emb.
     Uses pgvector with cosine distance operator (<->) and converts to similarity.
     """
+    where_clause = "WHERE doc_emb IS NOT NULL"
+    if not include_benign:
+        where_clause += " AND label = 1"
+
     stmt = sa.text(
-        """
+        f"""
         SELECT id,
                label,
                subject,
@@ -99,13 +103,11 @@ def _nearest_neighbors(vec: List[float], limit: int = 8) -> List[NeighborOut]:
                redacted_body,
                1 - (doc_emb <-> :q) AS cosine_similarity
         FROM messages
-        WHERE doc_emb IS NOT NULL AND label = 1
+        {where_clause}
         ORDER BY doc_emb <-> :q
         LIMIT :lim
         """
-    ).bindparams(
-        sa.bindparam("q", type_=Vector(1536)),
-    )
+    ).bindparams(sa.bindparam("q", type_=Vector(1536)))
 
     rows: List[Tuple[int, int | None, str | None, str | None, str | None, float]] = []
     with engine.connect() as conn:
@@ -250,8 +252,9 @@ def _summarize_reasons_with_llm(
 def _decide_ai_verdict(phase1: ScanOut, phish_neighbors: List[NeighborOut]) -> str:
     """
     Lightweight verdict logic combining deterministic outcome with neighbor similarity.
-    Simple and conservative: strong phish similarity or phase1 phishing -> phishing;
-    some phish neighbors -> needs_review; else benign.
+    Updated thresholds (lowered from 0.88/0.75) to improve recall while maintaining
+    precision through Phase 1 filtering. Conservative approach: Phase 1 phishing
+    always passes through; similarity-driven escalation for borderline cases.
     """
     # Immediate pass-through if already phishing
     if phase1.verdict == "phishing":
@@ -262,9 +265,11 @@ def _decide_ai_verdict(phase1: ScanOut, phish_neighbors: List[NeighborOut]) -> s
         1, min(3, len(phish_neighbors))
     ) if phish_neighbors else 0.0
 
-    if top_sim >= 0.88 or (phase1.verdict == "needs_review" and avg_top3 >= 0.82):
+    # Lowered thresholds to improve recall (was 0.88/0.82, 0.75/0.72)
+    # Target: increase detection while maintaining precision through Phase 1 filtering
+    if top_sim >= 0.70 or (phase1.verdict == "needs_review" and avg_top3 >= 0.68):
         return "phishing"
-    if top_sim >= 0.75 or avg_top3 >= 0.72:
+    if top_sim >= 0.55 or avg_top3 >= 0.52:
         return "needs_review"
     return phase1.verdict
 
