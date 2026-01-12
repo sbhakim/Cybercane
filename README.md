@@ -1,4 +1,5 @@
 # CyberCane
+<!-- Note: Manuscript directory and LaTeX compilation content excluded from README (not uploaded to GitHub) -->
 
 CyberCane is a privacy-first phishing defense system that combines deterministic security rules with retrieval-augmented reasoning to produce explainable risk assessments. The project targets healthcare workflows where low false-positive rates and transparent decision logic are essential.
 
@@ -79,7 +80,6 @@ PYTHONPATH=api python reports/rag_ablations.py --tuned         # RAG k-neighbor 
 PYTHONPATH=api python reports/bootstrap_ci.py --n-bootstrap 10000  # Confidence intervals
 PYTHONPATH=api python reports/evaluate_explanations.py         # Explanation quality
 PYTHONPATH=api python reports/cost_benefit_analysis.py         # ROI calculation
-cd Manuscript && bash compile_manuscript.sh                    # Compile LaTeX paper
 ```
 Scripts generate CSV tables and PDF figures. Public datasets (Nazario.clean, SpamAssassin) must be placed in `datasets/` directory.
 
@@ -87,8 +87,7 @@ Scripts generate CSV tables and PDF figures. Public datasets (Nazario.clean, Spa
 - `api/` — FastAPI backend and pipeline logic
 - `web/` — Next.js frontend
 - `db/` — Postgres image and initialization SQL
-- `reports/` — Evaluation scripts for manuscript tables and figures
-- `Manuscript/` — LaTeX source for academic paper
+- `reports/` — Evaluation scripts generating CSV tables and PDF figures
 
 ## Citation
 
