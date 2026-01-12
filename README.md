@@ -31,6 +31,26 @@ Typical evaluation workflow:
 3) Run threshold tuning and test split evaluation.
 4) Export tables for manuscript use.
 
+## Evaluation snapshot (public test split)
+Mixed-label test split (n=1,110) from Nazario.clean + SpamAssassin. These figures illustrate conservative Phase 1 screening and the distribution of Phase 2 AI verdicts.
+
+**Phase 1 (deterministic)**
+| Threshold | Acc. | Prec. | Recall | F1 | FPR |
+| --- | --- | --- | --- | --- | --- |
+| 2 | 0.617 | 0.830 | 0.178 | 0.293 | 0.029 |
+| 5 | 0.568 | 0.864 | 0.038 | 0.074 | 0.005 |
+
+**Phase 2 (AI summary)**
+| Metric | Value |
+| --- | --- |
+| AI verdict benign | 955 (86.0%) |
+| AI verdict needs_review | 106 (9.5%) |
+| AI verdict phishing | 49 (4.4%) |
+| AI score mean (0–10) | 1.99 |
+| Top similarity mean | 0.171 |
+
+These numbers summarize behavior on public datasets only; healthcare-specific evaluation is planned.
+
 ## Quick start (Docker)
 ```bash
 docker compose up --build
