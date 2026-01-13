@@ -1,5 +1,10 @@
 from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, EmailStr
+
+# ============================================================================
+# Request/Response Schemas
+# ============================================================================
 
 class PingOut(BaseModel):
     id: int
@@ -9,9 +14,11 @@ class PingOut(BaseModel):
 class EmailIn(BaseModel):
     """
     Minimal email payload for the Scan Lab and backend pipeline.
+
+    Fields:
     - sender/receiver: email addresses
     - subject/body: message fields
-    - url: 1 if email contains at least one link, else 0 (from dataset semantics)
+    - url: 1 if email contains at least one link, else 0 (dataset semantics)
     """
 
     sender: EmailStr
@@ -23,7 +30,9 @@ class EmailIn(BaseModel):
 
 class RedactionsOut(BaseModel):
     """
-    Summary of PII redactions performed. Raw PII is never returned.
+    Summary of PII redactions performed.
+
+    Raw PII is never returned.
     """
 
     types: Dict[str, int]
@@ -33,9 +42,11 @@ class RedactionsOut(BaseModel):
 class ScanOut(BaseModel):
     """
     Output of deterministic classifier pipeline.
-    verdict: one of benign | needs_review | phishing
-    reasons: human-readable explanations for UI transparency
-    indicators: key boolean/numeric indicators used in decisioning
+
+    Fields:
+    - verdict: benign | needs_review | phishing
+    - reasons: human-readable explanations for UI transparency
+    - indicators: key boolean/numeric indicators used in decisioning
     """
 
     verdict: Literal["benign", "needs_review", "phishing"]
@@ -57,7 +68,7 @@ class NeighborOut(BaseModel):
 
 
 class AIAnalyzeOut(BaseModel):
-    """Phase-2 output including AI verdict and supporting context."""
+    """Phase 2 output including AI verdict and supporting context."""
     phase1: ScanOut
     neighbors: List[NeighborOut]
     phish_neighbors: List[NeighborOut]

@@ -8,19 +8,19 @@ router = APIRouter()
 @router.post("", response_model=ScanOut)
 def scan(payload: EmailIn) -> ScanOut:
     """
-    **Phase 1: Deterministic Phishing Detection**
+    Phase 1: Deterministic phishing detection.
 
     Analyzes email using symbolic rules without external API calls.
     No OPENAI_API_KEY required.
 
-    **Detection Features:**
+    Detection features:
     - DNS validation (MX, SPF, DMARC records)
     - Domain authentication analysis
     - URL heuristics (IP literals, shorteners)
     - Content analysis (urgency keywords, credential requests)
     - PII redaction before processing
 
-    **Returns:**
+    Returns:
     - `verdict`: benign | needs_review | phishing
     - `score`: 0-10 deterministic risk score
     - `reasons`: List of human-readable detection reasons
@@ -28,12 +28,12 @@ def scan(payload: EmailIn) -> ScanOut:
     - `redactions`: PII redaction summary
     - `redacted_body`: Body text with PII masked
 
-    **Performance:**
+    Performance:
     - Latency: ~12ms (median)
     - Precision: 83.0% at threshold=2
     - No external dependencies (runs offline)
 
-    **Example Request:**
+    Example request:
     ```json
     {
       "sender": "alert@suspicious-bank.com",
@@ -44,4 +44,3 @@ def scan(payload: EmailIn) -> ScanOut:
     ```
     """
     return classify_email(payload.model_dump())
-

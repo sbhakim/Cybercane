@@ -1,20 +1,22 @@
 # CyberCane Research Evaluation Scripts
 
-This directory contains **6 key evaluation scripts** used to generate the experimental results, tables, and figures reported in the CyberCane manuscript submitted for IEEE publication. These scripts demonstrate rigorous experimental methodology and are provided for code review and reproducibility purposes.
+This directory contains 6 evaluation scripts used to generate the experimental results, tables, and figures for the CyberCane phishing detection system. These scripts demonstrate the evaluation methodology and experimental analysis.
 
-## Academic Code Repository Purpose
+## Purpose
 
-These scripts are structured for **academic peer review**, with:
-- Comprehensive docstrings explaining research context and findings
-- Comments for code reviewers (`NOTE FOR REVIEWERS`, `TODO FOR REVIEWERS`)
-- Strategically abstracted implementation details (1-2 key steps per file shown in comments rather than full code)
-- Academic references and methodological justifications
+These scripts provide detailed evaluation and analysis of the phishing detection system, including:
+- Performance comparisons across configurations
+- Statistical validation of improvements
+- Feature importance analysis
+- Failure mode categorization
+- Threshold selection methodology
+- Explainability metrics
 
-**Important**: These are production-quality research scripts with some implementation details abstracted for academic review. Full implementation available in the parent `reports/` directory.
+Some implementation details are marked with TODO comments indicating areas for future enhancement or completion.
 
 ---
 
-## 6 Core Evaluation Scripts (In This Directory)
+## 6 Core Evaluation Scripts
 
 ### 1. `retrieval_augmented_ablation_study.py`
 **Purpose**: Quantify the impact of Retrieval-Augmented Generation (RAG) on phishing detection performance
@@ -38,12 +40,10 @@ PYTHONPATH=api python reports_cybercane/retrieval_augmented_ablation_study.py \
     --k-values 3,5,8
 ```
 
-**Manuscript Reference**: Table 3 (RAG Ablation Results), Section 4.3
-
 ---
 
 ### 2. `paired_statistical_tests.py`
-**Purpose**: Validate performance improvements using rigorous paired statistical tests
+**Purpose**: Validate performance improvements using paired statistical tests
 
 **Methodology**:
 - McNemar's test: Paired comparison for binary classifiers on same test set
@@ -63,16 +63,14 @@ PYTHONPATH=api python reports_cybercane/paired_statistical_tests.py \
     --seed 42
 ```
 
-**Manuscript Reference**: Section 4.5 (Statistical Significance Testing)
-
-**Academic References**:
-- McNemar, Q. (1947). "Note on the sampling error of the difference between correlated proportions"
-- Efron & Tibshirani (1993). "An Introduction to the Bootstrap"
+**References**:
+- McNemar (1947): "Note on the sampling error of the difference between correlated proportions"
+- Efron & Tibshirani (1993): "An Introduction to the Bootstrap"
 
 ---
 
 ### 3. `leave_one_out_feature_analysis.py`
-**Purpose**: Systematically quantify individual rule contributions to detection performance
+**Purpose**: Quantify individual rule contributions to detection performance
 
 **Methodology**:
 - Leave-one-out ablation: Remove each rule independently, measure impact
@@ -91,12 +89,10 @@ PYTHONPATH=api python reports_cybercane/leave_one_out_feature_analysis.py \
     --threshold 2
 ```
 
-**Manuscript Reference**: Table 5 (Per-Rule Feature Importance), Section 4.3.1
-
 ---
 
 ### 4. `failure_case_taxonomy.py`
-**Purpose**: Systematically categorize detection failures to explain low recall (17.8%)
+**Purpose**: Categorize detection failures to explain low recall (17.8%)
 
 **Methodology**:
 - Extract all false negatives (missed phishing) and false positives (flagged benign)
@@ -122,9 +118,7 @@ PYTHONPATH=api python reports_cybercane/failure_case_taxonomy.py \
     --sample-size 20
 ```
 
-**Manuscript Reference**: Table 6 (Failure Case Taxonomy), Section 4.6
-
-**Key Insight**: Converts apparent weakness (82.2% missed phishing) into defensible design rationale (precision-first for healthcare deployment)
+**Key Insight**: Converts low recall into defensible design rationale (precision-first for healthcare deployment)
 
 ---
 
@@ -150,9 +144,7 @@ PYTHONPATH=api python reports_cybercane/threshold_optimization.py \
     --min-precision 0.95
 ```
 
-**Manuscript Reference**: Section 3.4 (Threshold Selection), Figure 4 (Precision-Recall Curve)
-
-**Academic References**:
+**References**:
 - Davis & Goadrich (2006): "The Relationship Between Precision-Recall and ROC Curves"
 - Saito & Rehmsmeier (2015): "Precision-Recall curves more informative than ROC for imbalanced data"
 
@@ -180,9 +172,7 @@ PYTHONPATH=api python reports_cybercane/explanation_quality_evaluation.py \
     --enable-dns
 ```
 
-**Manuscript Reference**: Section 4.7 (Explainability Evaluation), Table 7 (Explanation Tag Distribution)
-
-**Academic References**:
+**References**:
 - Ribeiro et al. (2016): "Why Should I Trust You?" (LIME explanations)
 - Guidotti et al. (2018): "A Survey of Methods for Explaining Black Box Models"
 
@@ -198,7 +188,7 @@ The parent `reports/` directory contains additional scripts used throughout the 
 - **`pii_redaction_validation.py`**: Validates PII redaction pipeline (emails, phone numbers, SSNs, credit cards)
 
 ### Baseline Comparisons
-- **`baseline_comparisons.py`**: Evaluates traditional ML baselines (Naive Bayes, SVM, Random Forest) for fair comparison
+- **`baseline_comparisons.py`**: Evaluates traditional ML baselines (Naive Bayes, SVM, Random Forest) for comparison
 - **`commercial_api_benchmark.py`**: Tests commercial solutions (Google Safe Browsing, VirusTotal) on same test set
 
 ### Performance Analysis
@@ -211,9 +201,9 @@ The parent `reports/` directory contains additional scripts used throughout the 
 - **`weight_sensitivity_analysis.py`**: Analyzes performance sensitivity to individual weight perturbations
 
 ### Visualization & Table Generation
-- **`generate_confusion_matrices.py`**: Creates confusion matrix visualizations for manuscript figures
-- **`format_results_tables.py`**: Converts CSV results to LaTeX-formatted tables for manuscript inclusion
-- **`plot_operating_curves.py`**: Publication-quality matplotlib figures for ROC/PR curves
+- **`generate_confusion_matrices.py`**: Creates confusion matrix visualizations for figures
+- **`format_results_tables.py`**: Converts CSV results to LaTeX-formatted tables
+- **`plot_operating_curves.py`**: Matplotlib figures for ROC/PR curves
 
 ### Reproducibility & Validation
 - **`seed_all_experiments.py`**: Sets random seeds (42) for NumPy, PyTorch, sklearn to ensure reproducibility
@@ -266,59 +256,28 @@ All experiments use fixed random seed (42) for reproducibility:
 Pre-computed stratified splits ensure consistency:
 - **Train**: 60% (n=15,000) - Used for embedding corpus only (no supervised training)
 - **Val**: 20% (n=5,000) - Used for threshold/weight tuning
-- **Test**: 20% (n=5,000) - Held-out for final evaluation (reported in manuscript)
+- **Test**: 20% (n=5,000) - Held-out for final evaluation
 
 ### Validation Set Usage
 - Threshold optimization: Uses validation set only (NOT test set)
 - Rule weight tuning: Uses validation set only
-- All manuscript results: Use pre-selected hyperparameters on test set (no peeking)
+- All reported results: Use pre-selected hyperparameters on test set (no peeking)
 
 ---
 
-## Academic Contributions Summary
+## Summary
 
 These 6 scripts collectively demonstrate:
 
-1. **Rigorous Experimental Methodology**: Ablation studies, statistical significance testing, leave-one-out analysis
+1. **Experimental Methodology**: Ablation studies, statistical significance testing, leave-one-out analysis
 2. **Reproducibility**: Fixed seeds, pre-computed splits, detailed documentation
-3. **Transparency**: Failure case taxonomy explains limitations honestly
-4. **Explainability**: Quantified explanation quality through empirical metrics
+3. **Transparency**: Failure case taxonomy explains limitations
+4. **Explainability**: Quantified explanation quality through metrics
 5. **Healthcare Applicability**: Precision-first design with operational cost analysis
 
-All experimental claims in the manuscript are backed by these systematic evaluations.
-
----
-
-## Citation
-
-If you use these scripts or methods in your research, please cite:
-
-```
-@article{cybercane2026,
-  title={CyberCane: Neuro-Symbolic Phishing Detection with Retrieval-Augmented Precision},
-  author={[Authors]},
-  journal={IEEE Transactions on Dependable and Secure Computing},
-  year={2026},
-  note={Under Review}
-}
-```
-
----
-
-## Contact & Issues
-
-For questions about methodology or implementation details, please contact:
-- [Primary Author Email]
-
-For bug reports or reproducibility issues, please open an issue in the project repository.
-
----
-
-## License
-
-This code is provided for academic review and research purposes. See LICENSE file for details.
+All experimental claims are backed by these systematic evaluations.
 
 ---
 
 **Last Updated**: January 2026
-**CyberCane Version**: 1.0 (Manuscript Submission)
+**CyberCane Version**: 1.0

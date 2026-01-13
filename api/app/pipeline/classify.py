@@ -1,5 +1,9 @@
 """
-Phase-1 orchestration: redact PII first, then score deterministically.
+Phase 1: Deterministic orchestration.
+
+This module wires the redaction step to the deterministic scorer and returns
+a stable, structured response for the API layer. It enforces the privacy-first
+ordering: redact before any downstream processing.
 """
 
 from typing import Any, Dict
@@ -9,9 +13,14 @@ from .pii import redact
 from .deterministic import score_email
 
 
+# ============================================================================
+# Public API
+# ============================================================================
+
 def classify_email(payload: Dict[str, Any]) -> ScanOut:
     """
-    Orchestrates normalization -> redaction -> deterministic scoring.
+    Orchestrate normalization -> redaction -> deterministic scoring.
+
     Expects keys: sender, receiver, subject, body, url (0/1)
     """
     sender = payload.get("sender", "")
@@ -41,4 +50,3 @@ def classify_email(payload: Dict[str, Any]) -> ScanOut:
         redactions=RedactionsOut(types=counts, count=sum(counts.values())),
         redacted_body=redacted_body,
     )
-

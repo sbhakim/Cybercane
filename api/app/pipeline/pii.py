@@ -1,11 +1,18 @@
 
 """
-This module provides a minimal PII detector + redactor for MVP use.
-Only deterministic regexes and masking are implemented. Raw PII is never returned.
+Phase 1: PII redaction utilities.
+
+This module provides a minimal, deterministic PII detector and masker. The
+patterns are intentionally conservative, favoring simple redaction over
+perfect coverage. Raw PII is never returned.
 """
 
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
+
+# ============================================================================
+# Regex Patterns
+# ============================================================================
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_RE = re.compile(r"(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}")
@@ -15,7 +22,7 @@ _DOB_RE = re.compile(r"\b(?:\d{1,2}[/-]){2}\d{2,4}\b")
 
 
 def _mask_email(value: str) -> str:
-    # Preserve domain while masking most of the local part.
+    """Mask an email address while preserving the domain."""
     local, _, domain = value.partition("@")
     if len(local) <= 2:
         masked_local = "*" * len(local)
@@ -25,7 +32,7 @@ def _mask_email(value: str) -> str:
 
 
 def _mask_digits_tail(value: str, keep: int = 4) -> str:
-    # Keep the last digits for traceability; mask the rest.
+    """Mask all but the last digits while preserving formatting."""
     digits = [c for c in value if c.isdigit()]
     if len(digits) <= keep:
         return "*" * len(value)
@@ -44,7 +51,7 @@ def _mask_digits_tail(value: str, keep: int = 4) -> str:
 
 def redact(text: str) -> Tuple[str, Dict[str, int]]:
     """
-    Redacts common PII patterns. Returns redacted text and counts per PII type.
+    Redact common PII patterns and return redacted text + per-type counts.
     """
     counts: Dict[str, int] = {"email": 0, "phone": 0, "ssn": 0, "cc": 0, "dob": 0}
 
@@ -66,7 +73,7 @@ def redact(text: str) -> Tuple[str, Dict[str, int]]:
 
 
 def redact_text(text: str | None) -> str:
-    """Convenience wrapper that returns only the redacted string for lightweight use cases."""
+    """Convenience wrapper that returns only the redacted string."""
     if not text:
         return ""
     redacted, _ = redact(text)
