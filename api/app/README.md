@@ -1,48 +1,64 @@
-# FastAPI Application (Backend App)
+# Backend Application (FastAPI)
 
-This directory contains the HackUMBC backend application built with FastAPI. It exposes health and scanning endpoints and hosts the deterministic phishing detection pipeline with PII redaction.
+Research backend for CyberCane. This service exposes the Phase 1 deterministic
+pipeline and the Phase 2 RAG analysis used in experiments, ablations, and
+evaluation runs.
 
 ## Highlights
-- FastAPI app in `app/main.py` with CORS enabled for local dev
-- Modular routers in `app/routers/`
-- Deterministic pipeline in `app/pipeline/` with PII redaction and DNS/SPF/DMARC checks
+
+- FastAPI app entrypoint in `app/main.py`
+- Modular routers under `app/routers/`
+- Deterministic pipeline in `app/pipeline/` with PII redaction and DNS checks
 - Pydantic schemas in `app/schemas.py`
 
-## Run (via Docker Compose)
+## Run (Docker Compose)
+
 From repo root:
+
 ```bash
 docker compose up --build api db
 ```
-API: `http://localhost:8000`
 
+API: `http://localhost:8000`  
 Health: `GET /health`
 
-## Run (local uvicorn)
-In `api/`:
+## Run (Local uvicorn)
+
+From `api/`:
+
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-## Key Files
-- `main.py`: creates FastAPI app, mounts routers
-- `routers/health.py`: health endpoint
-- `routers/scan.py`: scanning endpoint `POST /scan`
-- `pipeline/`: redaction and deterministic scoring
-- `schemas.py`: Pydantic models for input/output
- - `scripts/clean_data.py`: CSV cleaning (sender_email extraction, timestamp normalization)
- - `scripts/backfill_embeddings.py`: OpenAI embeddings backfill into pgvector columns
+## Key Modules
+
+- `main.py`: FastAPI app, routers, OpenAPI metadata
+- `routers/health.py`: service + DB liveness
+- `routers/scan.py`: Phase 1 endpoint (`POST /scan`)
+- `routers/ai.py`: Phase 2 endpoint (`POST /ai/analyze`)
+- `pipeline/`: redaction + deterministic scoring
+- `schemas.py`: request/response contracts
+- `scripts/clean_data.py`: CSV normalization for ingestion
+- `scripts/backfill_embeddings.py`: OpenAI embeddings backfill into pgvector
 
 ## Evaluation
-- Pandas-based evaluation and dataset stats live in `app/evaluation/`.
-- Run full evaluation on `datasets/Nazario.csv` and write CSV/JSON to `datasets/evaluation_results_[timestamp]`:
+
+Pandas-based evaluation scripts live in `app/evaluation/`.
+
+Run a full evaluation on `datasets/Nazario.csv` and write CSV/JSON outputs to
+`datasets/evaluation_results_[timestamp]`:
+
 ```bash
 py -m app.evaluation.run | cat
 ```
 
 ## API
-### POST /scan
+
+### POST /scan (Phase 1)
+
 Request body (JSON):
+
 ```json
 {
   "sender": "someone@example.com",
@@ -54,6 +70,7 @@ Request body (JSON):
 ```
 
 Response body (JSON):
+
 ```json
 {
   "verdict": "needs_review",
@@ -66,7 +83,9 @@ Response body (JSON):
 ```
 
 ## Pipeline Overview
+
 Processing order for `POST /scan`:
+
 1. Redact PII in body via `pipeline/pii.py`
 2. Score deterministically via `pipeline/deterministic.py`:
    - Domain heuristics (freemail corporate claims, lookalikes)
@@ -75,14 +94,16 @@ Processing order for `POST /scan`:
    - DNS checks (MX presence, SPF/DMARC TXT presence and DMARC policy)
 3. Threshold to verdict: `benign | needs_review | phishing`
 
-## Notes
-- DNS checks use `dnspython` and query public DNS for MX/TXT; timeouts/errors are treated as missing records (conservative weighting).
-- The rule weights live in `pipeline/deterministic.py` as `RULE_WEIGHTS` and can be adjusted in code.
+Notes:
+- DNS checks use `dnspython` and query public DNS for MX/TXT; timeouts/errors
+  are treated as missing records (conservative weighting).
+- Rule weights live in `pipeline/deterministic.py` as `RULE_WEIGHTS`.
 
-## Database & Embeddings
+## Database and Embeddings
 
-### Schema (messages)
-Backed by Postgres 17 + pgvector. Core columns:
+Backed by Postgres 17 + pgvector.
+
+Core columns:
 - Raw: `sender`, `sender_email`, `receiver`, `msg_date`, `subject`, `body`, `url_extracted`
 - Flags: `urls` (0/1), `label` (0/1), derived `sender_domain`, `has_url`
 - RAG vectors (1536 dims): `subject_emb`, `body_emb`, `url_emb`, `doc_emb`
@@ -90,26 +111,35 @@ Backed by Postgres 17 + pgvector. Core columns:
 See `db/init.sql` for full DDL, triggers, and HNSW indexes.
 
 ### Ingestion (Nazario.csv)
+
 1) Copy CSV into db container:
+
 ```bash
 docker compose cp datasets/Nazario.clean.csv db:/tmp/Nazario.clean.csv
 ```
+
 2) Ingest with COPY (NULL ''):
+
 ```bash
 docker compose exec db psql -U postgres -d app -c "COPY messages (sender, receiver, msg_date, subject, body, urls, label, sender_email, url_extracted) FROM '/tmp/Nazario.clean.csv' WITH (FORMAT csv, HEADER true, NULL '');"
 ```
 
 ### Embeddings Backfill
+
 Rebuild API to ensure `openai` is installed and `OPENAI_API_KEY` is set:
+
 ```bash
 docker compose build api && docker compose up -d api
 ```
 
-- Generate combined document embeddings (subject + body) → `doc_emb`:
+- Generate combined document embeddings (subject + body) -> `doc_emb`:
+
 ```bash
 docker compose exec api python -m app.scripts.backfill_embeddings --target doc --batch-size 64 --model text-embedding-3-small
 ```
+
 - Optionally generate other embeddings:
+
 ```bash
 docker compose exec api python -m app.scripts.backfill_embeddings --target subject --batch-size 64
 docker compose exec api python -m app.scripts.backfill_embeddings --target body --batch-size 64
@@ -117,14 +147,14 @@ docker compose exec api python -m app.scripts.backfill_embeddings --target url -
 ```
 
 ### Current Embedding Status (after Nazario load)
+
 - `doc_emb`: 1565
 - `subject_emb`: 1561
 - `body_emb`: pending (not backfilled)
 - `url_emb`: 184
 
 Verify counts:
+
 ```bash
 docker compose exec db psql -U postgres -d app -c "SELECT COUNT(*) total, COUNT(doc_emb) doc, COUNT(subject_emb) subject, COUNT(body_emb) body, COUNT(url_emb) url FROM messages;"
 ```
-
-
