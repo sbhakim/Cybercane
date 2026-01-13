@@ -18,6 +18,8 @@ api/.mypy_cache/
 # Data, reports, and manuscript artifacts (excluded for now)
 datasets/
 reports/
+!reports_cybercane/
+!reports_cybercane/**
 Manuscript/
 docs/
 api/samples/
@@ -30,6 +32,8 @@ api/samples/
 *.svg
 *.md
 !README.md
+!reports_cybercane/*.md
+!reports_cybercane/*.py
 
 # Editors / IDE
 .idea/
