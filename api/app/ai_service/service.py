@@ -313,25 +313,51 @@ def _summarize_reasons_with_llm(
         return "yes" if bool(v) else "no"
 
     sender_domain = inds.get("sender_domain") or ""
-    phase1_summary = (
-        f"auth(has_mx={_yn(inds.get('has_mx'))}, spf_present={_yn(inds.get('spf_present'))}, "
-        f"dmarc_present={_yn(inds.get('dmarc_present'))}, dmarc_policy={inds.get('dmarc_policy', 'none')}) "
-        f"sender_domain={sender_domain}"
-    )
 
-    # Construct prompt that guides LLM to generate structured, concise output
+    # Build structured evidence block from Phase 1 detected violations
+    detected_evidence = []
+    if phase1.reasons:
+        detected_evidence.append("DETECTED VIOLATIONS (cite these exactly):")
+        for idx, reason in enumerate(phase1.reasons, 1):
+            detected_evidence.append(f"  {idx}. {reason}")
+    else:
+        detected_evidence.append("DETECTED VIOLATIONS: None")
+
+    # Add technical auth/DNS details as supplementary evidence
+    detected_evidence.extend([
+        "",
+        "TECHNICAL INDICATORS:",
+        f"  - Sender domain: {sender_domain}",
+        f"  - MX record present: {_yn(inds.get('has_mx'))}",
+        f"  - SPF record present: {_yn(inds.get('spf_present'))}",
+        f"  - DMARC record present: {_yn(inds.get('dmarc_present'))}",
+        f"  - DMARC policy: {inds.get('dmarc_policy', 'none')}",
+    ])
+
+    evidence_block = "\n".join(detected_evidence)
+
+    # Construct prompt that ENFORCES explicit evidence citation
     prompt = (
-        "System: You are a security assistant. All retrieved neighbors are labeled phishing (label=1). "
-        "Use them as risk exemplars for retrieval-augmented reasoning. Weigh deterministic auth flags and neighbor similarity.\n\n"
-        "Task: Write 3–5 concise bullets explaining risk. Start each bullet with a tag in brackets "
-        "such as [URL], [AUTH], [URGENCY], [SIMILARITY], [CONTENT]. Keep each under 18 words. Do not mention any prior verdict or percentage scores.\n\n"
-        + "Email Subject:\n" + subject[:200]
-        + "\nEmail Body (redacted):\n" + body[:800]
-        + "\n\nDeterministic Summary:\n" + phase1_summary
-        + "\n\nNeighbor Stats (phish-only): top_sim=" + f"{top_sim:.2f}" +
-          ", avg_top3=" + f"{avg_top3:.2f}" + ", avg_all=" + f"{avg_all:.2f}" +
-        "\nNeighbors (doc_emb cosine similarity):\n- " + "\n- ".join(neighbor_lines) +
-        "\n\nRespond as bullet points only, no preface."
+        "System: You are a security assistant analyzing phishing risk. You MUST base ALL explanations on evidence provided below.\n\n"
+        "CRITICAL RULES:\n"
+        "1. For [AUTH] tags: CITE specific DNS/SPF/DMARC failures from TECHNICAL INDICATORS\n"
+        "2. For [URL] tags: CITE specific URL patterns from DETECTED VIOLATIONS\n"
+        "3. For [URGENCY] tags: CITE specific urgency keywords from DETECTED VIOLATIONS\n"
+        "4. For [CONTENT] tags: CITE specific credential/PHI requests from DETECTED VIOLATIONS\n"
+        "5. For [SIMILARITY] tags: Reference neighbor similarity stats below\n"
+        "6. DO NOT generate explanations without citing provided evidence\n"
+        "7. If no evidence exists for a category, DO NOT use that tag\n\n"
+        "=== EMAIL TO ANALYZE ===\n"
+        f"Subject: {subject[:200]}\n"
+        f"Body (redacted): {body[:800]}\n\n"
+        "=== EVIDENCE FROM PHASE 1 ANALYSIS ===\n"
+        + evidence_block + "\n\n"
+        "=== RETRIEVAL CONTEXT ===\n"
+        f"Neighbor Stats (phish-only corpus): top_sim={top_sim:.2f}, avg_top3={avg_top3:.2f}, avg_all={avg_all:.2f}\n"
+        "Top Similar Emails:\n- " + "\n- ".join(neighbor_lines) + "\n\n"
+        "Task: Write 3–5 concise bullets (under 18 words each). Start each with a bracketed tag. "
+        "CITE SPECIFIC evidence from above (e.g., '[AUTH] No SPF record for domain X').\n\n"
+        "Respond as bullet points only, no preface."
     )
 
     try:
