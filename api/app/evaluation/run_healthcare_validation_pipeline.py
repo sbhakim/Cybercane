@@ -2,9 +2,8 @@
 Complete healthcare validation pipeline.
 
 Orchestrates:
-1. Synthetic phishing generation
-2. Evaluation on synthetic dataset
-3. LaTeX table generation
+1. Synthetic phishing generation (naive baseline + sophisticated healthcare attacks)
+2. Evaluation on synthetic datasets
 
 This script can be run in stages or all at once.
 """
@@ -39,11 +38,6 @@ def main():
         "--skip-evaluate",
         action="store_true",
         help="Skip evaluation (use existing results)",
-    )
-    parser.add_argument(
-        "--skip-latex",
-        action="store_true",
-        help="Skip LaTeX table generation",
     )
     parser.add_argument(
         "--count-per-category",
@@ -89,18 +83,6 @@ def main():
         else:
             steps_run.append("✅ Evaluated synthetic dataset")
 
-    # Step 3: Generate LaTeX table
-    if not args.skip_latex and not failed:
-        ret = run_command(
-            ["python", "-m", "app.evaluation.generate_latex_healthcare_table"],
-            "Generate healthcare validation LaTeX table",
-        )
-        if ret != 0:
-            print("⚠️  LaTeX generation failed. Check that result CSVs exist.")
-            failed = True
-        else:
-            steps_run.append("✅ Generated LaTeX table")
-
     # Summary
     print(f"\n{'='*80}")
     print("HEALTHCARE VALIDATION PIPELINE COMPLETE")
@@ -113,11 +95,10 @@ def main():
         sys.exit(1)
     else:
         print("\n✅ All steps completed successfully!")
-        print("\n📋 Next steps:")
-        print("   1. Copy LaTeX table to local: docker cp cybercane-api-1:/app/Manuscript/tables/healthcare_validation.tex ./Manuscript/tables/")
-        print("   2. Add healthcare validation section to main-pmlr.tex (see temporary_instruction.md)")
-        print("   3. Update Discussion section limitation text")
-        print("   4. Recompile PDF")
+        print("\n📋 Results saved to reports/ directory:")
+        print("   - healthcare_synthetic_results.csv")
+        print("   - healthcare_synthetic_results_by_category.csv")
+        print("   - naive_baseline_results.csv")
         sys.exit(0)
 
 
