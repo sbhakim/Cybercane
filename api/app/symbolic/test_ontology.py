@@ -153,7 +153,7 @@ def main():
         test_indicator_conversion()
 
         print("=" * 80)
-        print("✓ ALL TESTS COMPLETE
+        print("✓ ALL TESTS COMPLETE")
         print("=" * 80)
 
     except Exception as e:

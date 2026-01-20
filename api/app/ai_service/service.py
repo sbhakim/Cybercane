@@ -302,6 +302,9 @@ def _summarize_reasons_with_llm(
     body: str,
     phase1: ScanOut,
     neighbors: List[NeighborOut],
+    ontology_attacks: Optional[List[OntologyAttack]] = None,
+    ontology_explanation: Optional[List[str]] = None,
+    include_ontology_context: bool = True,
     model: str = "gpt-4.1-mini",
 ) -> List[str]:
     """
@@ -347,6 +350,8 @@ def _summarize_reasons_with_llm(
         neighbor_lines.append(
             f"id={n.id} label=phish sim={n.similarity:.2f} subj={(n.subject or '')[:60]}"
         )
+    if not neighbor_lines:
+        neighbor_lines = ["(none)"]
 
     # Compute aggregate similarity metrics for prompt
     sims = sorted([float(n.similarity) for n in neighbors], reverse=True)
@@ -383,17 +388,54 @@ def _summarize_reasons_with_llm(
 
     evidence_block = "\n".join(detected_evidence)
 
+    # Ontology evidence (optional, formal reasoning chain)
+    ontology_block = ""
+    if include_ontology_context and (ontology_attacks or ontology_explanation):
+        ontology_lines: List[str] = []
+        if ontology_attacks:
+            ontology_lines.append("Inferred attack types (confidence):")
+            for attack in ontology_attacks[:5]:
+                ontology_lines.append(f"- {attack.attack_type} ({attack.confidence:.2f})")
+        if ontology_explanation:
+            ontology_lines.append("Reasoning chain:")
+            for line in ontology_explanation[:8]:
+                ontology_lines.append(f"- {line}")
+        ontology_block = "\n".join(ontology_lines)
+
     # Construct prompt that ENFORCES explicit evidence citation
+    rules = [
+        "1. For [AUTH] tags: Use EXACT phrases from TECHNICAL INDICATORS (e.g., 'No SPF record', 'DMARC not present', 'Missing MX')",
+        "2. For [URL] tags: Use EXACT terms from DETECTED VIOLATIONS ('IP literal', 'URL shortener', 'domain mismatch')",
+        "3. For [URGENCY] tags: QUOTE specific keywords found (e.g., 'urgent', 'immediate', 'expires') from DETECTED VIOLATIONS",
+        "4. For [CONTENT] tags: Use EXACT terms ('credential request', 'PHI request', 'password') from DETECTED VIOLATIONS",
+        "5. For [SIMILARITY] tags: Reference actual similarity scores (e.g., 'top_sim=0.82')",
+        "6. DO NOT paraphrase or reword evidence—copy terminology verbatim",
+        "7. DO NOT infer or add interpretation—only cite what's explicitly listed",
+    ]
+    if ontology_block:
+        rules.append("8. For [ONTOLOGY] tags: Cite the attack type AND reasoning chain from ONTOLOGY INFERENCE")
+        rules.append("9. If no evidence exists for a category, DO NOT use that tag")
+    else:
+        rules.append("8. If no evidence exists for a category, DO NOT use that tag")
+
+    ontology_task = ""
+    if ontology_block:
+        ontology_task = "If ontology evidence is provided, you may include at most one [ONTOLOGY] bullet.\n"
+
     prompt = (
         "System: You are a security assistant analyzing phishing risk. You MUST base ALL explanations on evidence provided below.\n\n"
-        "CRITICAL RULES:\n"
-        "1. For [AUTH] tags: CITE specific DNS/SPF/DMARC failures from TECHNICAL INDICATORS\n"
-        "2. For [URL] tags: CITE specific URL patterns from DETECTED VIOLATIONS\n"
-        "3. For [URGENCY] tags: CITE specific urgency keywords from DETECTED VIOLATIONS\n"
-        "4. For [CONTENT] tags: CITE specific credential/PHI requests from DETECTED VIOLATIONS\n"
-        "5. For [SIMILARITY] tags: Reference neighbor similarity stats below\n"
-        "6. DO NOT generate explanations without citing provided evidence\n"
-        "7. If no evidence exists for a category, DO NOT use that tag\n\n"
+        "CRITICAL CITATION RULES (STRICT ENFORCEMENT):\n"
+        + "\n".join(rules)
+        + "\n\n"
+        "EXAMPLES OF CORRECT CITATIONS:\n"
+        "✓ [AUTH] No SPF record for sender domain example.com as per TECHNICAL INDICATORS\n"
+        "✓ [URGENCY] Urgency keyword 'expires' detected in DETECTED VIOLATIONS\n"
+        "✓ [URL] IP literal link detected in DETECTED VIOLATIONS\n"
+        "✓ [SIMILARITY] High similarity to known phishing (top_sim=0.82) from RETRIEVAL CONTEXT\n\n"
+        "EXAMPLES OF INCORRECT CITATIONS (DO NOT USE):\n"
+        "✗ [AUTH] SPF record missing (should be 'No SPF record')\n"
+        "✗ [URGENCY] Email uses urgency language (should quote specific keyword)\n"
+        "✗ [URL] Contains shortened links (should be 'URL shortener detected')\n\n"
         "=== EMAIL TO ANALYZE ===\n"
         f"Subject: {subject[:200]}\n"
         f"Body (redacted): {body[:800]}\n\n"
@@ -402,8 +444,10 @@ def _summarize_reasons_with_llm(
         "=== RETRIEVAL CONTEXT ===\n"
         f"Neighbor Stats (phish-only corpus): top_sim={top_sim:.2f}, avg_top3={avg_top3:.2f}, avg_all={avg_all:.2f}\n"
         "Top Similar Emails:\n- " + "\n- ".join(neighbor_lines) + "\n\n"
-        "Task: Write 3–5 concise bullets (under 18 words each). Start each with a bracketed tag. "
-        "CITE SPECIFIC evidence from above (e.g., '[AUTH] No SPF record for domain X').\n\n"
+        + ("=== ONTOLOGY INFERENCE ===\n" + ontology_block + "\n\n" if ontology_block else "")
+        + "Task: Write 3–5 concise bullets (under 18 words each). Start each with a bracketed tag. "
+        + ontology_task
+        + "Use EXACT terminology from evidence sections above. DO NOT paraphrase.\n\n"
         "Respond as bullet points only, no preface."
     )
 
@@ -574,7 +618,13 @@ def _compute_ai_score(phase1: ScanOut, neighbors: List[NeighborOut]) -> int:
 # Public API
 # ============================================================================
 
-def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) -> AIAnalyzeOut:
+def analyze_email(
+    payload: EmailIn,
+    phase1: ScanOut,
+    *,
+    neighbors_k: int = 8,
+    include_ontology_context: bool = True,
+) -> AIAnalyzeOut:
     """
     Perform complete RAG-based phishing analysis.
 
@@ -675,7 +725,14 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
         )
 
     # Retrieve similar emails from vector database
-    neighbors = _nearest_neighbors(vec, limit=neighbors_k)
+    if neighbors_k <= 0:
+        neighbors = []
+    else:
+        try:
+            neighbors = _nearest_neighbors(vec, limit=neighbors_k)
+        except Exception as exc:
+            logger.warning(f"Neighbor retrieval failed; proceeding without neighbors: {exc}")
+            neighbors = []
 
     # Redact PII from neighbor examples to prevent data exposure
     for neighbor in neighbors:
@@ -705,6 +762,9 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
         body=phase1.redacted_body or payload.body,
         phase1=phase1,
         neighbors=neighbors,
+        ontology_attacks=ontology_attacks,
+        ontology_explanation=ontology_explanation,
+        include_ontology_context=include_ontology_context,
     )
 
     # Append conclusion line summarizing final stance
