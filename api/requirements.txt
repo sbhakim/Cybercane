@@ -10,3 +10,6 @@ pandas==2.2.2
 alembic==1.13.2
 pgvector==0.3.3
 openai>=1.46.0
+
+# Neuro-symbolic reasoning dependencies
+rdflib==7.0.0

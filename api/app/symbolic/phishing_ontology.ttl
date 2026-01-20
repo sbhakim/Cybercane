@@ -1,0 +1,238 @@
+@prefix phish: <http://cybercane.ai/ontology/phishing#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ============================================================================
+# PhishOnt: Formal Ontology for Healthcare Phishing Detection
+# ============================================================================
+# Version: 0.1.0
+# Authors: CyberCane Research Team
+# Description: Formal OWL ontology encoding attack patterns, indicators,
+#              and inference rules for neuro-symbolic phishing detection
+# ============================================================================
+
+# Ontology metadata
+<http://cybercane.ai/ontology/phishing> a owl:Ontology ;
+    rdfs:label "PhishOnt - Healthcare Phishing Attack Ontology" ;
+    rdfs:comment "Formal knowledge representation for phishing attack classification" ;
+    owl:versionInfo "0.1.0" .
+
+# ============================================================================
+# TOP-LEVEL ATTACK TAXONOMY
+# ============================================================================
+
+phish:PhishingAttack a owl:Class ;
+    rdfs:label "Phishing Attack" ;
+    rdfs:comment "Root class for all phishing attack types" .
+
+# Social Engineering Attacks (human-targeted deception)
+phish:SocialEngineeringAttack a owl:Class ;
+    rdfs:subClassOf phish:PhishingAttack ;
+    rdfs:label "Social Engineering Attack" ;
+    rdfs:comment "Attacks exploiting psychological manipulation" .
+
+# Technical Attacks (infrastructure-based exploitation)
+phish:TechnicalAttack a owl:Class ;
+    rdfs:subClassOf phish:PhishingAttack ;
+    rdfs:label "Technical Attack" ;
+    rdfs:comment "Attacks exploiting technical vulnerabilities or missing security controls" .
+
+# ============================================================================
+# HEALTHCARE-SPECIFIC ATTACK CATEGORIES (from manuscript Section 5.3)
+# ============================================================================
+
+# Appointment/Check-in Scams (34% of healthcare phishing)
+phish:AppointmentScam a owl:Class ;
+    rdfs:subClassOf phish:SocialEngineeringAttack ;
+    rdfs:label "Appointment Scam" ;
+    rdfs:comment "Impersonates healthcare providers requesting urgent confirmation or rescheduling" .
+
+# Insurance Verification Phishing (26% of healthcare phishing)
+phish:InsuranceVerificationPhish a owl:Class ;
+    rdfs:subClassOf phish:SocialEngineeringAttack ;
+    rdfs:label "Insurance Verification Phishing" ;
+    rdfs:comment "Fake benefits verification, coverage confirmation, or card updates" .
+
+# Prescription Notification Fraud (20.5% of healthcare phishing)
+phish:PrescriptionFraud a owl:Class ;
+    rdfs:subClassOf phish:SocialEngineeringAttack ;
+    rdfs:label "Prescription Fraud" ;
+    rdfs:comment "Pharmacy impersonation requesting verification, payment, or delivery confirmation" .
+
+# EHR Credential Theft (19.5% of healthcare phishing)
+phish:CredentialTheft a owl:Class ;
+    rdfs:subClassOf phish:TechnicalAttack ;
+    rdfs:label "EHR Credential Theft" ;
+    rdfs:comment "Fake login portals enabling system compromise and PHI exfiltration" .
+
+# ============================================================================
+# INDICATOR PROPERTIES (from Phase 1 deterministic rules)
+# ============================================================================
+
+# DNS/Authentication Indicators
+phish:hasMissingMX a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Missing MX Record" ;
+    rdfs:comment "Sender domain has no mail exchange (MX) DNS record" .
+
+phish:hasMissingSPF a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Missing SPF Record" ;
+    rdfs:comment "Sender domain lacks SPF policy for email authentication" .
+
+phish:hasMissingDMARC a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Missing DMARC Policy" ;
+    rdfs:comment "Sender domain lacks DMARC policy for authentication enforcement" .
+
+# URL-based Indicators
+phish:hasIPLiteralURL a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "IP Literal in URL" ;
+    rdfs:comment "Email contains URLs with raw IP addresses instead of domains" .
+
+phish:hasShortenedURL a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Shortened URL" ;
+    rdfs:comment "Email contains URL shorteners (bit.ly, tinyurl, etc.)" .
+
+phish:hasDomainMismatch a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Domain Mismatch" ;
+    rdfs:comment "Link domain differs from sender domain" .
+
+# Content-based Indicators
+phish:hasUrgencyLanguage a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Urgency Language" ;
+    rdfs:comment "Contains urgency keywords (urgent, immediate, verify, expire, suspend)" .
+
+phish:hasCredentialRequest a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Credential Request" ;
+    rdfs:comment "Requests sensitive information (password, SSN, credit card, login)" .
+
+phish:hasFreemailSender a owl:DatatypeProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range xsd:boolean ;
+    rdfs:label "Freemail Sender" ;
+    rdfs:comment "Sent from free email provider (gmail, yahoo, outlook)" .
+
+# ============================================================================
+# INFERENCE RULES (OWL Class Definitions)
+# ============================================================================
+
+# Rule 1: Credential Theft = credential request + missing MX
+phish:CredentialTheft owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        [ a owl:Restriction ;
+          owl:onProperty phish:hasCredentialRequest ;
+          owl:hasValue true ]
+        [ a owl:Restriction ;
+          owl:onProperty phish:hasMissingMX ;
+          owl:hasValue true ]
+    )
+] .
+
+# Rule 2: High-confidence phishing = urgency + credential request + missing DMARC
+phish:HighConfidencePhishing a owl:Class ;
+    rdfs:subClassOf phish:PhishingAttack ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            [ a owl:Restriction ;
+              owl:onProperty phish:hasUrgencyLanguage ;
+              owl:hasValue true ]
+            [ a owl:Restriction ;
+              owl:onProperty phish:hasCredentialRequest ;
+              owl:hasValue true ]
+            [ a owl:Restriction ;
+              owl:onProperty phish:hasMissingDMARC ;
+              owl:hasValue true ]
+        )
+    ] .
+
+# Rule 3: URL-based attack = IP literal OR shortened URL + domain mismatch
+phish:URLBasedAttack a owl:Class ;
+    rdfs:subClassOf phish:TechnicalAttack ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            [ a owl:Class ;
+              owl:unionOf (
+                  [ a owl:Restriction ;
+                    owl:onProperty phish:hasIPLiteralURL ;
+                    owl:hasValue true ]
+                  [ a owl:Restriction ;
+                    owl:onProperty phish:hasShortenedURL ;
+                    owl:hasValue true ]
+              ) ]
+            [ a owl:Restriction ;
+              owl:onProperty phish:hasDomainMismatch ;
+              owl:hasValue true ]
+        )
+    ] .
+
+# ============================================================================
+# ATTACK SEVERITY LEVELS
+# ============================================================================
+
+phish:AttackSeverity a owl:Class ;
+    rdfs:label "Attack Severity" ;
+    rdfs:comment "Classification of attack severity based on potential harm" .
+
+phish:CriticalSeverity a owl:Class ;
+    rdfs:subClassOf phish:AttackSeverity ;
+    rdfs:label "Critical Severity" .
+
+phish:HighSeverity a owl:Class ;
+    rdfs:subClassOf phish:AttackSeverity ;
+    rdfs:label "High Severity" .
+
+phish:MediumSeverity a owl:Class ;
+    rdfs:subClassOf phish:AttackSeverity ;
+    rdfs:label "Medium Severity" .
+
+# Severity assignments (for future use)
+phish:hasSeverity a owl:ObjectProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range phish:AttackSeverity .
+
+# CredentialTheft is critical (enables system access)
+phish:CredentialTheft rdfs:subClassOf [
+    a owl:Restriction ;
+    owl:onProperty phish:hasSeverity ;
+    owl:hasValue phish:CriticalSeverity
+] .
+
+# ============================================================================
+# FUTURE EXTENSIONS (placeholders)
+# ============================================================================
+
+# Brand impersonation (to be populated with healthcare brands)
+phish:TargetBrand a owl:Class ;
+    rdfs:label "Target Brand" ;
+    rdfs:comment "Healthcare brands commonly impersonated in phishing" .
+
+phish:targetsBrand a owl:ObjectProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range phish:TargetBrand .
+
+# Vulnerable populations (elderly, non-native speakers)
+phish:VulnerablePopulation a owl:Class ;
+    rdfs:label "Vulnerable Population" ;
+    rdfs:comment "Demographics with reduced phishing detection capability" .
+
+phish:targetsPopulation a owl:ObjectProperty ;
+    rdfs:domain phish:PhishingAttack ;
+    rdfs:range phish:VulnerablePopulation .
