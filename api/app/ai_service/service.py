@@ -21,14 +21,61 @@ breaking the detection pipeline.
 from __future__ import annotations
 
 import os
-from typing import List, Tuple
+import logging
+from typing import List, Tuple, Optional
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
 from app.db import engine
-from app.schemas import EmailIn, ScanOut, AIAnalyzeOut, NeighborOut, RedactionsOut
+from app.schemas import EmailIn, ScanOut, AIAnalyzeOut, NeighborOut, RedactionsOut, OntologyAttack
 from app.pipeline.pii import redact
+
+# Neuro-symbolic ontology reasoning
+try:
+    from app.symbolic.ontology_reasoner import (
+        PhishingOntologyReasoner,
+        indicators_to_ontology_format,
+        create_reasoner
+    )
+    ONTOLOGY_AVAILABLE = True
+except ImportError:
+    ONTOLOGY_AVAILABLE = False
+    PhishingOntologyReasoner = None
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Global Ontology Reasoner (cached for performance)
+# ============================================================================
+
+_ONTOLOGY_REASONER: Optional[PhishingOntologyReasoner] = None
+
+
+def get_ontology_reasoner() -> Optional[PhishingOntologyReasoner]:
+    """
+    Get cached ontology reasoner instance.
+
+    Lazy initialization: creates reasoner on first call and caches for reuse.
+    This avoids reloading the 164-triple ontology on every request.
+
+    Returns:
+        PhishingOntologyReasoner instance or None if unavailable
+    """
+    global _ONTOLOGY_REASONER
+
+    if not ONTOLOGY_AVAILABLE:
+        return None
+
+    if _ONTOLOGY_REASONER is None:
+        try:
+            _ONTOLOGY_REASONER = create_reasoner()
+            logger.info("Ontology reasoner initialized and cached")
+        except Exception as e:
+            logger.warning(f"Failed to initialize ontology reasoner: {e}")
+            return None
+
+    return _ONTOLOGY_REASONER
 
 
 # ============================================================================
@@ -532,6 +579,7 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
     Perform complete RAG-based phishing analysis.
 
     Pipeline:
+    0. [NEW] Ontology-based semantic inference from Phase 1 indicators
     1. Combine subject + body and generate embedding vector
     2. Retrieve k nearest neighbors from phishing corpus via pgvector
     3. Compute AI verdict using similarity-based thresholds
@@ -552,6 +600,44 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
     Returns:
         AIAnalyzeOut containing verdict, score, explanations, and neighbor context
     """
+    # ========================================================================
+    # STEP 0: Ontology-based Semantic Inference (NEURO-SYMBOLIC)
+    # ========================================================================
+    ontology_attacks: Optional[List[OntologyAttack]] = None
+    ontology_explanation: Optional[List[str]] = None
+
+    reasoner = get_ontology_reasoner()
+    if reasoner and phase1.indicators:
+        try:
+            # Convert Phase 1 indicators to ontology format
+            ontology_indicators = indicators_to_ontology_format(phase1.indicators)
+
+            # Infer attack types using description logic reasoning
+            inferred_attacks = reasoner.infer_attack_types(ontology_indicators, min_confidence=0.3)
+
+            if inferred_attacks:
+                # Convert to schema format
+                ontology_attacks = [
+                    OntologyAttack(attack_type=name, confidence=conf)
+                    for name, conf in inferred_attacks
+                ]
+
+                # Generate explanation chain for top attack
+                top_attack = inferred_attacks[0][0]
+                ontology_explanation = reasoner.get_explanation_chain(
+                    ontology_indicators,
+                    top_attack
+                )
+
+                logger.info(f"Ontology inferred {len(ontology_attacks)} attack types, "
+                           f"top: {top_attack} ({inferred_attacks[0][1]*100:.1f}%)")
+        except Exception as e:
+            logger.warning(f"Ontology inference failed: {e}")
+            # Graceful degradation: continue without ontology
+
+    # ========================================================================
+    # STEP 1: Neural Embedding & Retrieval (continues as before)
+    # ========================================================================
     doc_text = _combine_subject_body(payload.subject, payload.body)
 
     try:
@@ -584,6 +670,8 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
             ai_label=ai_label,
             ai_score=phase1.score,
             ai_reasons=ai_reasons,
+            ontology_attacks=ontology_attacks,  # NEW: Ontology inference
+            ontology_explanation=ontology_explanation,  # NEW: Reasoning chain
         )
 
     # Retrieve similar emails from vector database
@@ -643,4 +731,6 @@ def analyze_email(payload: EmailIn, phase1: ScanOut, *, neighbors_k: int = 8) ->
         ai_label=ai_label,
         ai_score=ai_score,
         ai_reasons=ai_reasons,
+        ontology_attacks=ontology_attacks,  # NEW: Ontology inference
+        ontology_explanation=ontology_explanation,  # NEW: Reasoning chain
     )

@@ -67,6 +67,12 @@ class NeighborOut(BaseModel):
     redactions: Optional[RedactionsOut] = None
 
 
+class OntologyAttack(BaseModel):
+    """Ontology-inferred attack classification."""
+    attack_type: str
+    confidence: float
+
+
 class AIAnalyzeOut(BaseModel):
     """Phase 2 output including AI verdict and supporting context."""
     phase1: ScanOut
@@ -76,3 +82,7 @@ class AIAnalyzeOut(BaseModel):
     ai_label: Literal[0, 1]
     ai_score: int
     ai_reasons: List[str]
+
+    # Neuro-symbolic ontology reasoning (NEW)
+    ontology_attacks: Optional[List[OntologyAttack]] = None
+    ontology_explanation: Optional[List[str]] = None
