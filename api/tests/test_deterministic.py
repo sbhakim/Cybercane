@@ -47,4 +47,16 @@ def test_scoring_link_host_indicators():
     )
     assert "link_hosts" in d.indicators
     assert any(h == "192.168.1.1" for h in d.indicators["link_hosts"])
+    assert d.indicators.get("ip_literal_link") is True
+    assert d.indicators.get("shortened_url") is True
 
+
+def test_domain_mismatch_indicator():
+    d = score_email(
+        sender="alerts@corp.com",
+        subject="",
+        body="Visit https://evil.com/login",
+        url_flag=1,
+        enable_dns_checks=False,
+    )
+    assert d.indicators.get("domain_mismatch") is True

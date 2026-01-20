@@ -103,6 +103,7 @@ class PhishingOntologyReasoner:
             "urgency": "hasUrgencyLanguage",
             "creds_request": "hasCredentialRequest",
             "freemail_sender": "hasFreemailSender",
+            "freemail_brand_claim": "hasFreemailSender",
             # Add more mappings as ontology expands
         }
 
@@ -152,19 +153,23 @@ class PhishingOntologyReasoner:
         attack_scores: Dict[str, float] = {}
 
         for attack_type_uri in self._attack_types:
-            # Get required indicators for this attack type
-            required_indicators = self._get_attack_indicators(attack_type_uri)
+            # Get rule structure for this attack type
+            rule = self._get_attack_rule(attack_type_uri)
+            all_of = rule.get("all_of", [])
+            any_of = rule.get("any_of", [])
 
-            if not required_indicators:
+            if not all_of and not any_of:
                 continue
 
             # Compute overlap using MAPPED indicators
-            matched = sum(1 for ind in required_indicators
-                         if ind in mapped_indicators)
+            matched_all = sum(1 for ind in all_of if ind in mapped_indicators)
+            matched_any = 1 if any(ind in mapped_indicators for ind in any_of) else 0
+            matched = matched_all + matched_any
+            required = len(all_of) + (1 if any_of else 0)
 
             if matched > 0:
-                confidence = matched / len(required_indicators)
-                if confidence >= min_confidence:
+                confidence = matched / required if required else 0.0
+                if confidence >= min_confidence and (not any_of or matched_any == 1):
                     attack_name = self._uri_to_name(attack_type_uri)
                     attack_scores[attack_name] = confidence
 
@@ -176,35 +181,41 @@ class PhishingOntologyReasoner:
         logger.info(f"Inferred {len(ranked)} attack types from {len(active_indicators)} indicators")
         return ranked
 
-    def _get_attack_indicators(self, attack_type_uri: URIRef) -> List[str]:
+    def _get_attack_rule(self, attack_type_uri: URIRef) -> Dict[str, List[str]]:
         """
-        Extract required indicators for a specific attack type.
+        Return the indicator rule structure for an attack type.
 
-        NOTE: Currently uses hardcoded mappings for reliability.
+        NOTE: Uses hardcoded mappings for reliability.
         Future: Parse OWL axioms dynamically via SPARQL.
-
-        Args:
-            attack_type_uri: URI of attack type class
-
-        Returns:
-            List of indicator property names required for this attack
         """
         attack_name = self._uri_to_name(attack_type_uri)
 
         # Hardcoded attack patterns matching ontology definitions
         # (corresponds to OWL equivalentClass axioms in phishing_ontology.ttl)
-        attack_patterns = {
-            "CredentialTheft": ["hasCredentialRequest", "hasMissingMX"],
-            "HighConfidencePhishing": ["hasUrgencyLanguage", "hasCredentialRequest", "hasMissingDMARC"],
-            "URLBasedAttack": ["hasIPLiteralURL", "hasDomainMismatch"],  # OR hasShortenedURL
-            "AppointmentScam": ["hasUrgencyLanguage", "hasFreemailSender"],
-            "InsuranceVerificationPhish": ["hasCredentialRequest", "hasFreemailSender"],
-            "PrescriptionFraud": ["hasUrgencyLanguage", "hasDomainMismatch"],
-            "TechnicalAttack": ["hasMissingMX", "hasMissingSPF"],
-            "SocialEngineeringAttack": ["hasUrgencyLanguage", "hasCredentialRequest"],
+        attack_patterns: Dict[str, Dict[str, List[str]]] = {
+            "CredentialTheft": {"all_of": ["hasCredentialRequest", "hasMissingMX"], "any_of": []},
+            "HighConfidencePhishing": {
+                "all_of": ["hasUrgencyLanguage", "hasCredentialRequest", "hasMissingDMARC"],
+                "any_of": [],
+            },
+            "URLBasedAttack": {
+                "all_of": ["hasDomainMismatch"],
+                "any_of": ["hasIPLiteralURL", "hasShortenedURL"],
+            },
+            "AppointmentScam": {"all_of": ["hasUrgencyLanguage", "hasFreemailSender"], "any_of": []},
+            "InsuranceVerificationPhish": {
+                "all_of": ["hasCredentialRequest", "hasFreemailSender"],
+                "any_of": [],
+            },
+            "PrescriptionFraud": {"all_of": ["hasUrgencyLanguage", "hasDomainMismatch"], "any_of": []},
+            "TechnicalAttack": {"all_of": ["hasMissingMX", "hasMissingSPF"], "any_of": []},
+            "SocialEngineeringAttack": {
+                "all_of": ["hasUrgencyLanguage", "hasCredentialRequest"],
+                "any_of": [],
+            },
         }
 
-        return attack_patterns.get(attack_name, [])
+        return attack_patterns.get(attack_name, {"all_of": [], "any_of": []})
 
     def get_explanation_chain(self,
                                indicators: Dict[str, bool],
@@ -235,11 +246,17 @@ class PhishingOntologyReasoner:
 
         # Step 2: Show inference rule
         attack_uri = self._name_to_uri(attack_type)
-        required = self._get_attack_indicators(attack_uri)
+        rule = self._get_attack_rule(attack_uri)
+        all_of = rule.get("all_of", [])
+        any_of = rule.get("any_of", [])
 
-        if required:
-            rule_str = " AND ".join([self._format_property_name(ind)
-                                     for ind in required])
+        if all_of or any_of:
+            all_str = " AND ".join(self._format_property_name(ind) for ind in all_of) if all_of else ""
+            any_str = " OR ".join(self._format_property_name(ind) for ind in any_of) if any_of else ""
+            if all_str and any_str:
+                rule_str = f"{all_str} AND ({any_str})"
+            else:
+                rule_str = all_str or any_str
             explanations.append(f"⚙ Rule: {attack_type} requires {rule_str}")
 
         # Step 3: Conclusion
@@ -330,7 +347,7 @@ def indicators_to_ontology_format(phase1_indicators: Dict) -> Dict[str, bool]:
     bool_indicators = {}
 
     # Direct boolean mappings
-    for key in ["urgency", "creds_request", "url_present", "freemail_brand_claim"]:
+    for key in ["urgency", "creds_request", "freemail_brand_claim", "freemail_sender"]:
         if key in phase1_indicators:
             bool_indicators[key] = bool(phase1_indicators[key])
 

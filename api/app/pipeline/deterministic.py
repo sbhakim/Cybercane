@@ -87,6 +87,23 @@ def _hosts_in_text(text: str) -> List[str]:
     return hosts
 
 
+def _normalize_host(host: str) -> str:
+    """Normalize host for comparison (strip www)."""
+    host = host.lower().strip()
+    if host.startswith("www."):
+        return host[4:]
+    return host
+
+
+def _host_matches_sender(host: str, sender_domain: str) -> bool:
+    """Return True if host is sender domain or a subdomain thereof."""
+    if not sender_domain:
+        return False
+    host = _normalize_host(host)
+    sender_domain = _normalize_host(sender_domain)
+    return host == sender_domain or host.endswith("." + sender_domain)
+
+
 def _is_confusable(a: str, b: str) -> bool:
     """
     Minimal confusable check using common character substitutions.
@@ -219,6 +236,8 @@ def score_email(*, sender: str, subject: str, body: str, url_flag: int,
 
     sender_domain = _extract_domain(sender)
     indicators["sender_domain"] = sender_domain
+    if sender_domain in FREEMAIL_DOMAINS:
+        indicators["freemail_sender"] = True
 
     # DNS/Auth checks (optional, best-effort)
     auth: Dict[str, Any] = {"has_mx": None, "spf_present": None, "dmarc_present": None, "dmarc_policy": None}
@@ -267,13 +286,20 @@ def score_email(*, sender: str, subject: str, body: str, url_flag: int,
         # URL presence alone is not discriminative; focus on specific URL threats.
         hosts = _hosts_in_text(body)
         indicators["link_hosts"] = hosts
+        domain_mismatch = False
         for h in hosts:
             if _IP_LIT_RE.match(h):
                 score += weights.get("ip_literal_link", 0)
                 reasons.append("Link points to IP literal host")
+                indicators["ip_literal_link"] = True
             if any(h.endswith(s) for s in URL_SHORTENERS):
                 score += weights.get("shortened_url", 0)
                 reasons.append("Shortened URL detected")
+                indicators["shortened_url"] = True
+            if sender_domain and not _IP_LIT_RE.match(h) and not _host_matches_sender(h, sender_domain):
+                domain_mismatch = True
+        if domain_mismatch:
+            indicators["domain_mismatch"] = True
 
     # 4) Content cues: urgency + credentials
     low_body = body.lower()
