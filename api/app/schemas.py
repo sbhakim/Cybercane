@@ -21,11 +21,11 @@ class EmailIn(BaseModel):
     - url: 1 if email contains at least one link, else 0 (dataset semantics)
     """
 
-    sender: EmailStr
-    receiver: Optional[EmailStr] = None
+    sender: str
+    receiver: Optional[str] = None
     subject: str
     body: str
-    url: int
+    url: Optional[int] = 0
 
 
 class RedactionsOut(BaseModel):
