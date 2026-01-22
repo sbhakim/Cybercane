@@ -31,6 +31,7 @@ services:
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/app}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      THRESHOLD_CONFIG_PATH: "${THRESHOLD_CONFIG_PATH:-/datasets/best_thresholds_dataphish.json}"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -70,6 +71,7 @@ services:
     environment:
       DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/app}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      THRESHOLD_CONFIG_PATH: "${THRESHOLD_CONFIG_PATH:-/datasets/best_thresholds_dataphish.json}"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

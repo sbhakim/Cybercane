@@ -10,6 +10,7 @@ Usage:
 import argparse
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -17,13 +18,20 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import numpy as np
 
-from app.schemas import EmailIn, ScanOut, RedactionsOut
 from app.pipeline.deterministic import score_email
 from app.pipeline.pii import redact
-from app.ai_service.service import analyze_email
+from app.ai_service import service as ai_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+@dataclass
+class Sample:
+    label: int
+    phase1_verdict: str
+    top_sim: float
+    avg_top3: float
+
 
 def load_validation_data(limit: int = None) -> pd.DataFrame:
     """Load validation split from JSONL."""
@@ -53,88 +61,86 @@ def load_validation_data(limit: int = None) -> pd.DataFrame:
     logger.info(f"Loaded {len(df)} validation emails")
     return df
 
-def evaluate_with_thresholds(
-    df: pd.DataFrame,
-    top_sim_threshold: float,
-    avg_top3_threshold: float,
-    neighbors_k: int
-) -> Dict[str, float]:
+def _build_samples(df: pd.DataFrame, neighbors_k: int) -> List[Sample]:
     """
-    Evaluate pipeline with specific threshold values.
+    Precompute Phase 1 verdicts and RAG similarity stats once per email.
 
-    Returns metrics: precision, recall, F1, FPR
+    This avoids LLM calls entirely and prevents recomputing embeddings
+    for every threshold combination.
     """
-    tp = fp = fn = tn = 0
+    samples: List[Sample] = []
+    total = len(df)
 
     for idx, row in df.iterrows():
         subject = str(row["subject"] or "")
         body = str(row["body"] or "")
         sender = str(row["sender"] or "")
-        true_label = row["label"]
+        true_label = int(row["label"])
 
-        # Redact and score
-        redacted_body, redaction_counts = redact(body)
+        redacted_body, _ = redact(body)
         phase1 = score_email(
             sender=sender,
             subject=subject,
             body=redacted_body,
             url_flag=1 if "http" in body.lower() else 0,
-            enable_dns_checks=False
+            enable_dns_checks=False,
         )
 
-        # RAG analysis
-        try:
-            email_in = EmailIn(subject=subject, body=redacted_body, sender=sender, url=0)
-            scan_out = ScanOut(
-                verdict=phase1.verdict,
-                score=phase1.score,
-                reasons=phase1.reasons,
-                indicators=phase1.indicators,
-                redactions=RedactionsOut(types=redaction_counts, count=sum(redaction_counts.values())),
-                redacted_body=redacted_body
+        doc_text = f"{subject}\n\n{redacted_body}".strip()
+        vec = ai_service._embed_text(doc_text)
+        neighbors = ai_service._nearest_neighbors(vec, limit=neighbors_k)
+        similarities = sorted([n.similarity for n in neighbors], reverse=True)
+
+        top_sim = similarities[0] if similarities else 0.0
+        avg_top3 = sum(similarities[:3]) / min(3, len(similarities)) if similarities else 0.0
+
+        samples.append(
+            Sample(
+                label=true_label,
+                phase1_verdict=phase1.verdict,
+                top_sim=top_sim,
+                avg_top3=avg_top3,
             )
+        )
 
-            ai_out = analyze_email(email_in, scan_out, neighbors_k=neighbors_k)
+        if (idx + 1) % 25 == 0:
+            logger.info(f"Precomputed {idx + 1}/{total} samples")
 
-            # Extract similarities
-            if ai_out.neighbors:
-                similarities = sorted([n.similarity for n in ai_out.neighbors], reverse=True)
-                top_sim = similarities[0] if similarities else 0.0
-                avg_top3 = sum(similarities[:3]) / min(3, len(similarities)) if similarities else 0.0
-            else:
-                top_sim = 0.0
-                avg_top3 = 0.0
+    return samples
 
-            # Apply custom thresholds (override service.py logic)
-            if phase1.verdict == "phishing":
-                predicted_label = 1
-            elif top_sim >= top_sim_threshold:
-                predicted_label = 1
-            elif phase1.verdict == "needs_review" and avg_top3 >= avg_top3_threshold:
-                predicted_label = 1
-            elif top_sim >= (top_sim_threshold - 0.15) or avg_top3 >= (avg_top3_threshold - 0.18):
-                predicted_label = 0  # needs_review threshold
-            else:
-                predicted_label = 0
 
-        except Exception as e:
-            logger.error(f"RAG failed on row {idx}: {e}")
-            predicted_label = 1 if phase1.verdict == "phishing" else 0
+def evaluate_with_thresholds(
+    samples: List[Sample],
+    top_sim_threshold: float,
+    avg_top3_threshold: float,
+) -> Dict[str, float]:
+    """
+    Evaluate thresholds against precomputed samples.
+    Returns metrics: precision, recall, F1, FPR
+    """
+    tp = fp = fn = tn = 0
 
-        # Update confusion matrix
-        if true_label == 1 and predicted_label == 1:
+    for sample in samples:
+        if sample.phase1_verdict == "phishing":
+            predicted_label = 1
+        elif sample.top_sim >= top_sim_threshold:
+            predicted_label = 1
+        elif sample.phase1_verdict == "needs_review" and sample.avg_top3 >= avg_top3_threshold:
+            predicted_label = 1
+        elif sample.top_sim >= (top_sim_threshold - 0.15) or sample.avg_top3 >= (avg_top3_threshold - 0.18):
+            predicted_label = 0  # needs_review threshold
+        else:
+            predicted_label = 0
+
+        if sample.label == 1 and predicted_label == 1:
             tp += 1
-        elif true_label == 0 and predicted_label == 1:
+        elif sample.label == 0 and predicted_label == 1:
             fp += 1
-        elif true_label == 1 and predicted_label == 0:
+        elif sample.label == 1 and predicted_label == 0:
             fn += 1
         else:
             tn += 1
 
-        if (idx + 1) % 50 == 0:
-            logger.info(f"Processed {idx+1}/{len(df)} (TP={tp}, FP={fp}, FN={fn}, TN={tn})")
-
-    # Calculate metrics
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
@@ -148,7 +154,7 @@ def evaluate_with_thresholds(
         "tp": tp,
         "fp": fp,
         "fn": fn,
-        "tn": tn
+        "tn": tn,
     }
 
 def grid_search_thresholds(df: pd.DataFrame, neighbors_k: int) -> Tuple[float, float, Dict]:
@@ -172,11 +178,15 @@ def grid_search_thresholds(df: pd.DataFrame, neighbors_k: int) -> Tuple[float, f
     logger.info(f"  avg_top3 range: {avg_top3_range[0]:.2f} to {avg_top3_range[-1]:.2f}")
     logger.info(f"  Total combinations: {len(top_sim_range) * len(avg_top3_range)}")
 
+    logger.info("\nPrecomputing similarity stats (embeddings + retrieval once per email)...")
+    samples = _build_samples(df, neighbors_k)
+    logger.info(f"Precomputed {len(samples)} samples")
+
     for top_sim in top_sim_range:
         for avg_top3 in avg_top3_range:
             logger.info(f"\nTesting: top_sim={top_sim:.2f}, avg_top3={avg_top3:.2f}")
 
-            metrics = evaluate_with_thresholds(df, top_sim, avg_top3, neighbors_k)
+            metrics = evaluate_with_thresholds(samples, top_sim, avg_top3)
 
             results.append({
                 "top_sim_threshold": top_sim,

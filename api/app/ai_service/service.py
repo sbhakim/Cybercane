@@ -20,8 +20,11 @@ breaking the detection pipeline.
 
 from __future__ import annotations
 
+import json
 import os
 import logging
+from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple, Optional
 
 import sqlalchemy as sa
@@ -50,6 +53,86 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 _ONTOLOGY_REASONER: Optional[PhishingOntologyReasoner] = None
+
+
+# ============================================================================
+# Similarity Thresholds (loaded once at startup)
+# ============================================================================
+
+@dataclass(frozen=True)
+class SimilarityThresholds:
+    phish_top_sim: float
+    phish_avg_top3: float
+    review_top_sim: float
+    review_avg_top3: float
+    source: str
+
+
+DEFAULT_THRESHOLDS = SimilarityThresholds(
+    phish_top_sim=0.40,
+    phish_avg_top3=0.35,
+    review_top_sim=0.25,
+    review_avg_top3=0.17,
+    source="defaults",
+)
+
+
+def _load_thresholds() -> SimilarityThresholds:
+    """
+    Load similarity thresholds from JSON config or use defaults.
+
+    Config path:
+      - If THRESHOLD_CONFIG_PATH is set, use that file.
+      - Else, fall back to datasets/best_thresholds_dataphish.json if present.
+    """
+    config_path = os.getenv("THRESHOLD_CONFIG_PATH", "").strip()
+    if config_path:
+        path = Path(config_path)
+    else:
+        path = Path(__file__).resolve().parents[3] / "datasets" / "best_thresholds_dataphish.json"
+
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            phish_top = float(data.get("top_similarity_threshold", DEFAULT_THRESHOLDS.phish_top_sim))
+            phish_avg = float(data.get("avg_top3_threshold", DEFAULT_THRESHOLDS.phish_avg_top3))
+            review_top = float(data.get("review_top_similarity_threshold", phish_top - 0.15))
+            review_avg = float(data.get("review_avg_top3_threshold", phish_avg - 0.18))
+
+            thresholds = SimilarityThresholds(
+                phish_top_sim=max(0.0, phish_top),
+                phish_avg_top3=max(0.0, phish_avg),
+                review_top_sim=max(0.0, review_top),
+                review_avg_top3=max(0.0, review_avg),
+                source=str(path),
+            )
+            logger.info(
+                "Loaded similarity thresholds from %s: phish_top=%.2f, phish_avg_top3=%.2f, "
+                "review_top=%.2f, review_avg_top3=%.2f",
+                path,
+                thresholds.phish_top_sim,
+                thresholds.phish_avg_top3,
+                thresholds.review_top_sim,
+                thresholds.review_avg_top3,
+            )
+            return thresholds
+        except Exception as e:
+            logger.warning("Failed to load thresholds from %s: %s. Using defaults.", path, e)
+    elif config_path:
+        logger.warning("Threshold config not found at %s. Using defaults.", path)
+
+    logger.info(
+        "Using default similarity thresholds: phish_top=%.2f, phish_avg_top3=%.2f, "
+        "review_top=%.2f, review_avg_top3=%.2f",
+        DEFAULT_THRESHOLDS.phish_top_sim,
+        DEFAULT_THRESHOLDS.phish_avg_top3,
+        DEFAULT_THRESHOLDS.review_top_sim,
+        DEFAULT_THRESHOLDS.review_avg_top3,
+    )
+    return DEFAULT_THRESHOLDS
+
+
+THRESHOLDS = _load_thresholds()
 
 
 def get_ontology_reasoner() -> Optional[PhishingOntologyReasoner]:
@@ -519,18 +602,17 @@ def _decide_ai_verdict(phase1: ScanOut, phish_neighbors: List[NeighborOut]) -> s
        (high-confidence deterministic signals override semantic analysis)
 
     2. Else, check similarity to known phishing:
-       - top_sim ≥ 0.70: Strong match to known phishing → "phishing"
-       - top_sim ≥ 0.55 OR avg_top3 ≥ 0.52: Moderate match → "needs_review"
+       - top_sim ≥ phish_top_sim: Strong match → "phishing"
+       - top_sim ≥ review_top_sim OR avg_top3 ≥ review_avg_top3: Moderate match → "needs_review"
 
-    3. If Phase 1 verdict was "needs_review" and avg_top3 ≥ 0.68:
+    3. If Phase 1 verdict was "needs_review" and avg_top3 ≥ phish_avg_top3:
        Escalate to "phishing" (borderline deterministic + strong semantic signal)
 
     4. Otherwise, return Phase 1 verdict unchanged
 
     Threshold Tuning:
-    Current thresholds (0.70/0.68/0.55/0.52) were determined through validation
-    set optimization. Lower thresholds improve recall while maintaining precision
-    through Phase 1 filtering.
+    Thresholds are loaded once at startup from THRESHOLD_CONFIG_PATH (if set),
+    otherwise default to DataPhish-tuned values embedded in the service.
 
     Args:
         phase1: Deterministic analysis results
@@ -550,9 +632,11 @@ def _decide_ai_verdict(phase1: ScanOut, phish_neighbors: List[NeighborOut]) -> s
     ) if phish_neighbors else 0.0
 
     # Apply tuned thresholds for semantic-based classification
-    if top_sim >= 0.70 or (phase1.verdict == "needs_review" and avg_top3 >= 0.68):
+    if top_sim >= THRESHOLDS.phish_top_sim or (
+        phase1.verdict == "needs_review" and avg_top3 >= THRESHOLDS.phish_avg_top3
+    ):
         return "phishing"
-    if top_sim >= 0.55 or avg_top3 >= 0.52:
+    if top_sim >= THRESHOLDS.review_top_sim or avg_top3 >= THRESHOLDS.review_avg_top3:
         return "needs_review"
 
     return phase1.verdict
