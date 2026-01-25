@@ -1,44 +1,44 @@
 # CyberCane
 <!-- Note: Manuscript directory and LaTeX compilation content excluded from README (not uploaded to GitHub) -->
 
-CyberCane is a privacy-first phishing defense system that combines deterministic security rules with retrieval-augmented reasoning to produce explainable risk assessments. The project targets healthcare workflows where low false-positive rates and transparent decision logic are essential.
+CyberCane is a privacy-first phishing detection system that combines deterministic rules, retrieval-augmented reasoning, and formal ontology inference to deliver transparent decisions in privacy-critical domains.
 
-## Research lineage
-This repository is an academic extension of the work initiated at https://github.com/pawelsloboda5/UMBC-hackathon. The current codebase expands the original architecture with a clearer neuro-symbolic pipeline, stronger privacy controls, and a more rigorous evaluation workflow suitable for research use.
+## Contributions
+- **Neuro-symbolic pipeline:** Phase 1 symbolic checks followed by Phase 2 RAG-based semantic analysis with conservative escalation.
+- **Privacy by design:** PII is redacted before any external API call; retrieval uses a phishing-only corpus.
+- **Formal explanations:** PhishOnt maps observed indicators to attack types with verifiable reasoning chains.
 
-## Primary contributions
-- **Neuro-symbolic pipeline:** Phase 1 uses deterministic checks (authentication presence, URL heuristics, urgency cues, credential requests) to produce an explainable baseline decision; Phase 2 uses retrieval-augmented reasoning to provide semantic context and calibrated escalation.
-- **Privacy by design:** Sensitive identifiers are redacted before any external model call; retrieval operates over a curated phishing-only corpus to ground explanations.
-- **Reproducible evaluation:** A public, mixed-label evaluation pipeline supports train/val/test splits, deterministic metrics, and AI summary statistics with consistent scripts and generated artifacts.
+## Results (from manuscript)
+Evaluations use Nazario.clean + SpamAssassin (test n=1,110) and DataPhish 2025 (test n=2,300; 60% LLM-generated).
 
-## Performance summary
-Evaluated on mixed-label test split (n=1,110) from Nazario.clean + SpamAssassin public datasets.
+Table 1: Detection performance (precision/recall/FPR)
+| Dataset (test) | Method | Precision | Recall | FPR |
+| --- | --- | --- | --- | --- |
+| Nazario.clean + SpamAssassin | Phase 1 (rules) | 83.0% | 17.8% | 2.9% |
+| Nazario.clean + SpamAssassin | Phase 2 (RAG, k=8) | 98.9% | 17.8% | 0.16% |
+| DataPhish 2025 | Phase 1 (rules) | 93.4% | 20.5% | — |
+| DataPhish 2025 | Phase 2 (RAG, k=8) | 98.2% | 99.1% | — |
 
-| Metric | Phase 1 (Rules) | Phase 2 (RAG) | Improvement |
-| --- | --- | --- | --- |
-| Precision | 83.0% | **98.9%** | +15.9pp |
-| Recall | 17.8% | 17.8% | — |
-| FPR | 2.9% | **0.16%** | **91% reduction** |
-| AUROC | 0.574 | 0.574 | — |
-| Latency | 12ms | 487ms | +475ms |
-| Cost/email | $0 | $0.002 | — |
+`—` = not reported in manuscript for DataPhish FPR.
 
-**ROI for 10K email organization:** 259.6× ($390K daily benefit vs. $1.5K cost)
+Table 2: Privacy and cost tradeoffs vs direct LLM baseline
+| Method | Precision | Recall | F1 | FPR | Cost/email | PHI exposure |
+| --- | --- | --- | --- | --- | --- | --- |
+| CyberCane (RAG, redacted) | 98.9% | 17.8% | 30.1% | 0.16% | $0.0017 | 0% |
+| GPT-4 Direct (gpt-4.1-mini, unredacted) | 93.2% | 99.0% | 96.0% | 5.9% | $0.0001 | 53.2% |
 
-The conservative recall (17.8%) reflects a precision-first design choice where false alarms carry high operational costs in healthcare settings. RAG achieves 91% FPR reduction while maintaining recall.
+Table 3: PhishOnt coverage on the test split
+| Split | Coverage |
+| --- | --- |
+| Overall (n=1,110) | 85.2% |
+| Phishing (n=495) | 77.4% |
+| Benign (n=615) | 91.5% |
 
-## System architecture
-**Phase 1 (Deterministic):** DNS validation (MX/SPF/DMARC) → URL analysis (shorteners, IP literals) → Content heuristics (urgency, credential requests)
+Healthcare case study estimates 259.6x ROI for a 10K-email/day organization.
 
-**Phase 2 (RAG):** PII redaction → Embedding (text-embedding-3-small) → HNSW retrieval (k=8, phishing-only corpus) → LLM reasoning (GPT-4.1-mini) → Conservative verdict escalation
-
-**Key innovations:** (1) Privacy-by-design with PII redaction before external API calls, (2) Phishing-only retrieval corpus prevents benign contamination, (3) Multi-tagged explanations ([URL], [AUTH], [SIMILARITY], [CONTENT], [URGENCY]), (4) Conservative thresholds (0.70/0.55) calibrated for low FPR.
-
-## Explainability analysis
-- **Tag distribution:** [URL] 28%, [AUTH] 24%, [SIMILARITY] 22%, [CONTENT] 16%, [URGENCY] 10%
-- **Multi-evidence verdicts:** 73% include 2+ tag types
-- **Explanation conciseness:** 11.6 words/reason average
-- **Verdict distribution:** 86.0% benign, 9.5% needs_review, 4.4% phishing
+## System overview
+- **Phase 1 (Deterministic):** DNS validation (MX/SPF/DMARC) + URL heuristics + urgency/credential cues.
+- **Phase 2 (RAG):** PII redaction -> embeddings (text-embedding-3-small) -> HNSW retrieval (k=8) -> GPT-4.1-mini explanations -> conservative verdict thresholds.
 
 ## Quick start (5 minutes)
 
@@ -68,34 +68,34 @@ curl -X POST http://localhost:8000/ai/analyze -H "Content-Type: application/json
   -d '{"sender":"alert@bank.com","subject":"Urgent: verify account","body":"Click: http://bit.ly/x","url":1}'
 ```
 
-**API endpoints:** `GET /health` (status) | `POST /scan` (Phase 1) | `POST /ai/analyze` (Phase 2)
+**API endpoints:** `GET /health` | `POST /scan` | `POST /ai/analyze`
 **Environment:** Python 3.11, PostgreSQL 17+pgvector, Node 18+, OpenAI API (text-embedding-3-small, GPT-4.1-mini)
 **Required env vars:** `OPENAI_API_KEY`, `DATABASE_URL`
 
 ## Reproducing results
 ```bash
 conda activate cybercane
-PYTHONPATH=api python reports/generate_full_curves.py          # ROC/PR curves
-PYTHONPATH=api python reports/rag_ablations.py --tuned         # RAG k-neighbor ablation
+PYTHONPATH=api python reports/generate_full_curves.py           # ROC/PR curves
+PYTHONPATH=api python reports/rag_ablations.py --tuned          # RAG k-neighbor ablation
 PYTHONPATH=api python reports/bootstrap_ci.py --n-bootstrap 10000  # Confidence intervals
-PYTHONPATH=api python reports/evaluate_explanations.py         # Explanation quality
-PYTHONPATH=api python reports/cost_benefit_analysis.py         # ROI calculation
+PYTHONPATH=api python reports/evaluate_explanations.py          # Explanation quality
+PYTHONPATH=api python reports/cost_benefit_analysis.py          # ROI calculation
 ```
-Scripts generate CSV tables and PDF figures. Public datasets (Nazario.clean, SpamAssassin) must be placed in `datasets/` directory.
+Scripts generate CSV tables and PDF figures. Public datasets (Nazario.clean, SpamAssassin) must be placed in `datasets/`.
 
 ## Repository layout
 - `api/` — FastAPI backend and pipeline logic
 - `web/` — Next.js frontend
 - `db/` — Postgres image and initialization SQL
-- `reports/` — Evaluation scripts generating CSV tables and PDF figures
+- `datasets/` — Data splits and corpus files (not all are tracked)
+- `reports/` — Evaluation scripts and generated artifacts
 
 ## Citation
-
 If you use CyberCane in your research, please cite:
 
 ```bibtex
 @inproceedings{cybercane2025,
-  title={CyberCane: Privacy-Preserving Neuro-Symbolic Phishing Defense for Healthcare},
+  title={CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning},
   author={[Authors]},
   booktitle={[Conference/Journal]},
   year={2025}
