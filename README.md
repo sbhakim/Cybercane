@@ -8,7 +8,7 @@ CyberCane is a privacy-first phishing detection system that combines determinist
 - **Privacy by design:** PII is redacted before any external API call; retrieval uses a phishing-only corpus.
 - **Formal explanations:** PhishOnt maps observed indicators to attack types with verifiable reasoning chains.
 
-## Results (from manuscript)
+## Results
 Evaluations use Nazario.clean + SpamAssassin (test n=1,110) and DataPhish 2025 (test n=2,300; 60% LLM-generated).
 
 Table 1: Detection performance (precision/recall/FPR)
@@ -39,6 +39,9 @@ Healthcare case study estimates 259.6x ROI for a 10K-email/day organization.
 ## System overview
 - **Phase 1 (Deterministic):** DNS validation (MX/SPF/DMARC) + URL heuristics + urgency/credential cues.
 - **Phase 2 (RAG):** PII redaction -> embeddings (text-embedding-3-small) -> HNSW retrieval (k=8) -> GPT-4.1-mini explanations -> conservative verdict thresholds.
+
+## Research lineage
+This repository extends the work initiated at https://github.com/pawelsloboda5/UMBC-hackathon, evolving the hackathon prototype into a research-grade neuro-symbolic pipeline with privacy safeguards and reproducible evaluation tooling.
 
 ## Quick start (5 minutes)
 
@@ -73,15 +76,7 @@ curl -X POST http://localhost:8000/ai/analyze -H "Content-Type: application/json
 **Required env vars:** `OPENAI_API_KEY`, `DATABASE_URL`
 
 ## Reproducing results
-```bash
-conda activate cybercane
-PYTHONPATH=api python reports/generate_full_curves.py           # ROC/PR curves
-PYTHONPATH=api python reports/rag_ablations.py --tuned          # RAG k-neighbor ablation
-PYTHONPATH=api python reports/bootstrap_ci.py --n-bootstrap 10000  # Confidence intervals
-PYTHONPATH=api python reports/evaluate_explanations.py          # Explanation quality
-PYTHONPATH=api python reports/cost_benefit_analysis.py          # ROI calculation
-```
-Scripts generate CSV tables and PDF figures. Public datasets (Nazario.clean, SpamAssassin) must be placed in `datasets/`.
+Use the evaluation scripts in `reports/` to regenerate tabular metrics (no plots or curves). Public datasets (Nazario.clean, SpamAssassin) must be placed in `datasets/`.
 
 ## Repository layout
 - `api/` — FastAPI backend and pipeline logic
@@ -102,4 +97,4 @@ If you use CyberCane in your research, please cite:
 }
 ```
 
-For questions or collaboration inquiries, please open an issue on GitHub.
+For questions or collaboration inquiries, please open an issue or email safayat dot b dot hakim at gmail dot com.
