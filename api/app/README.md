@@ -9,6 +9,8 @@ evaluation runs.
 - FastAPI app entrypoint in `app/main.py`
 - Modular routers under `app/routers/`
 - Deterministic pipeline in `app/pipeline/` with PII redaction and DNS checks
+- RAG service in `app/ai_service/` with provider fallback and thresholded verdicts
+- Ontology reasoning in `app/symbolic/` for attack-type inference
 - Pydantic schemas in `app/schemas.py`
 
 ## Run (Docker Compose)
@@ -38,6 +40,8 @@ uvicorn app.main:app --reload
 - `routers/scan.py`: Phase 1 endpoint (`POST /scan`)
 - `routers/ai.py`: Phase 2 endpoint (`POST /ai/analyze`)
 - `pipeline/`: redaction + deterministic scoring
+- `ai_service/service.py`: embeddings, pgvector retrieval, similarity thresholds, LLM explanations
+- `symbolic/ontology_reasoner.py`: PhishOnt inference + explanation chains
 - `schemas.py`: request/response contracts
 - `scripts/clean_data.py`: CSV normalization for ingestion
 - `scripts/backfill_embeddings.py`: OpenAI embeddings backfill into pgvector
@@ -82,6 +86,11 @@ Response body (JSON):
 }
 ```
 
+### POST /ai/analyze (Phase 1 + Phase 2)
+
+Runs deterministic scoring, retrieval, and LLM explanation generation. Responses
+include `ai_verdict`, `ai_score`, neighbor summaries, and optional ontology hits.
+
 ## Pipeline Overview
 
 Processing order for `POST /scan`:
@@ -98,6 +107,10 @@ Notes:
 - DNS checks use `dnspython` and query public DNS for MX/TXT; timeouts/errors
   are treated as missing records (conservative weighting).
 - Rule weights live in `pipeline/deterministic.py` as `RULE_WEIGHTS`.
+- Phase 2 uses text-embedding-3-small for embeddings and GPT-4.1-mini for
+  explanations by default (DeepSeek fallback supported).
+- Similarity thresholds load from `datasets/best_thresholds_dataphish.json` if present
+  or from `THRESHOLD_CONFIG_PATH`.
 
 ## Database and Embeddings
 
@@ -109,6 +122,15 @@ Core columns:
 - RAG vectors (1536 dims): `subject_emb`, `body_emb`, `url_emb`, `doc_emb`
 
 See `db/init.sql` for full DDL, triggers, and HNSW indexes.
+
+### Ingestion (DataPhish)
+
+Use the loader to embed and insert the phishing-only corpus:
+
+```bash
+OPENAI_API_KEY="your-key" PYTHONPATH=api \
+  python api/app/scripts/load_dataphish_corpus.py --split train --limit 8000
+```
 
 ### Ingestion (Nazario.csv)
 
@@ -145,13 +167,6 @@ docker compose exec api python -m app.scripts.backfill_embeddings --target subje
 docker compose exec api python -m app.scripts.backfill_embeddings --target body --batch-size 64
 docker compose exec api python -m app.scripts.backfill_embeddings --target url --batch-size 64
 ```
-
-### Current Embedding Status (after Nazario load)
-
-- `doc_emb`: 1565
-- `subject_emb`: 1561
-- `body_emb`: pending (not backfilled)
-- `url_emb`: 184
 
 Verify counts:
 
