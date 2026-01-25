@@ -23,6 +23,7 @@ reports/
 Manuscript/
 docs/
 api/samples/
+dataset_cybercane/
 *.csv
 *.pdf
 *.tex
@@ -53,3 +54,6 @@ bge-large.py
 .DS_Store
 Thumbs.db
 *.tmp
+
+# Local synthetic V3 artifacts
+api/app/evaluation/*v3*.py

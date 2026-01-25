@@ -1,0 +1,78 @@
+{
+  "version": "v1.0",
+  "description": "Multi-model synthetic healthcare phishing generation with provenance tracking",
+  "generation": {
+    "models": [
+      {
+        "name": "gpt-4.1-mini",
+        "provider": "openai",
+        "temperature": 0.8,
+        "max_tokens": 220
+      },
+      {
+        "name": "deepseek-chat",
+        "provider": "openai",
+        "temperature": 0.8,
+        "max_tokens": 220,
+        "base_url": "https://api.deepseek.com"
+      },
+      {
+        "name": "claude-3-5-haiku-20241022",
+        "provider": "anthropic",
+        "temperature": 0.8,
+        "max_tokens": 220
+      }
+    ],
+    "holdout_models": ["gpt-4o"],
+    "seed": 42,
+    "samples_per_category": 50,
+    "prompt_version": "healthcare_v1"
+  },
+  "categories": {
+    "appointment_scam": {
+      "count": 50,
+      "description": "Impersonate healthcare providers requesting urgent appointment confirmation/rescheduling"
+    },
+    "insurance_verification": {
+      "count": 50,
+      "description": "Fake insurance benefits verification, coverage confirmation, or card updates"
+    },
+    "prescription_fraud": {
+      "count": 50,
+      "description": "Pharmacy impersonation requesting verification, payment, or delivery confirmation"
+    },
+    "ehr_credential_theft": {
+      "count": 50,
+      "description": "Fake EHR/patient portal login pages to steal credentials"
+    }
+  },
+  "quality_filters": {
+    "url_required": true,
+    "min_body_length": 100,
+    "max_body_length": 1000,
+    "min_subject_length": 5,
+    "max_subject_length": 100,
+    "require_category_keywords": true
+  },
+  "deduplication": {
+    "exact_hash": true,
+    "near_duplicate_threshold": 0.85,
+    "similarity_method": "tfidf_cosine"
+  },
+  "contamination_checks": {
+    "enabled": true,
+    "threshold": 0.90,
+    "corpora_paths": [
+      "datasets/train_combined.csv",
+      "datasets/val_combined.csv",
+      "datasets/test_combined.csv"
+    ],
+    "embedding_model": "text-embedding-3-small"
+  },
+  "output": {
+    "csv_path": "reports/synthetic_healthcare_phishing_v1.csv",
+    "manifest_path": "reports/synthetic_generation_manifest_v1.json",
+    "rejections_path": "reports/synthetic_generation_rejections_v1.csv",
+    "dataset_card_path": "datasets/DATASET_SYNTHETIC_HEALTHCARE_V1.md"
+  }
+}

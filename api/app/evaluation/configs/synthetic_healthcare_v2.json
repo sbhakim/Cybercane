@@ -1,0 +1,89 @@
+{
+  "version": "v2.0",
+  "description": "Multi-model synthetic healthcare phishing with diversity improvements and attack style variants",
+  "generation": {
+    "models": [
+      {
+        "name": "gpt-4.1-mini",
+        "provider": "openai",
+        "temperature": 0.8,
+        "max_tokens": 220,
+        "quota_per_category": 25
+      },
+      {
+        "name": "deepseek-chat",
+        "provider": "openai",
+        "temperature": 0.8,
+        "max_tokens": 220,
+        "base_url": "https://api.deepseek.com",
+        "quota_per_category": 25
+      }
+    ],
+    "holdout_models": ["gpt-4o", "claude-3-5-haiku-20241022"],
+    "seed": 42,
+    "samples_per_category": 50,
+    "prompt_version": "healthcare_v2",
+    "prompt_styles": {
+      "enabled": true,
+      "distribution": {
+        "aggressive": 0.50,
+        "neutral": 0.30,
+        "stealth": 0.20
+      }
+    },
+    "model_quota_enforcement": {
+      "enabled": true,
+      "max_retries_per_sample": 3,
+      "allow_quota_overflow": false
+    }
+  },
+  "categories": {
+    "appointment_scam": {
+      "count": 50,
+      "description": "Impersonate healthcare providers requesting urgent appointment confirmation/rescheduling"
+    },
+    "insurance_verification": {
+      "count": 50,
+      "description": "Fake insurance benefits verification, coverage confirmation, or card updates"
+    },
+    "prescription_fraud": {
+      "count": 50,
+      "description": "Pharmacy impersonation requesting verification, payment, or delivery confirmation"
+    },
+    "ehr_credential_theft": {
+      "count": 50,
+      "description": "Fake EHR/patient portal login pages to steal credentials"
+    }
+  },
+  "quality_filters": {
+    "url_required": true,
+    "min_body_length": 100,
+    "max_body_length": 1000,
+    "min_subject_length": 5,
+    "max_subject_length": 100,
+    "truncate_long_subjects": true,
+    "require_category_keywords": true,
+    "min_subject_uniqueness_per_category": 0.80
+  },
+  "deduplication": {
+    "exact_hash": true,
+    "near_duplicate_threshold": 0.85,
+    "similarity_method": "tfidf_cosine"
+  },
+  "contamination_checks": {
+    "enabled": true,
+    "threshold": 0.90,
+    "corpora_paths": [
+      "datasets/train_combined.csv",
+      "datasets/val_combined.csv",
+      "datasets/test_combined.csv"
+    ],
+    "embedding_model": "text-embedding-3-small"
+  },
+  "output": {
+    "csv_path": "reports/synthetic_healthcare_phishing_v2.csv",
+    "manifest_path": "reports/synthetic_generation_manifest_v2.json",
+    "rejections_path": "reports/synthetic_generation_rejections_v2.csv",
+    "dataset_card_path": "datasets/DATASET_SYNTHETIC_HEALTHCARE_V2.md"
+  }
+}
