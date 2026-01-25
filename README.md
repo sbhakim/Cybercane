@@ -3,6 +3,9 @@
 
 CyberCane is a privacy-first phishing detection system that combines deterministic rules, retrieval-augmented reasoning, and formal ontology inference to deliver transparent decisions in privacy-critical domains.
 
+## Research lineage
+This repository extends the prototype at https://github.com/pawelsloboda5/UMBC-hackathon, expanding it into a neuro-symbolic pipeline with stronger privacy controls and research-grade evaluation workflows.
+
 ## Contributions
 - **Neuro-symbolic pipeline:** Phase 1 symbolic checks followed by Phase 2 RAG-based semantic analysis with conservative escalation.
 - **Privacy by design:** PII is redacted before any external API call; retrieval uses a phishing-only corpus.
@@ -39,9 +42,6 @@ Healthcare case study estimates 259.6x ROI for a 10K-email/day organization.
 ## System overview
 - **Phase 1 (Deterministic):** DNS validation (MX/SPF/DMARC) + URL heuristics + urgency/credential cues.
 - **Phase 2 (RAG):** PII redaction -> embeddings (text-embedding-3-small) -> HNSW retrieval (k=8) -> GPT-4.1-mini explanations -> conservative verdict thresholds.
-
-## Research lineage
-This repository extends the work initiated at https://github.com/pawelsloboda5/UMBC-hackathon, evolving the hackathon prototype into a research-grade neuro-symbolic pipeline with privacy safeguards and reproducible evaluation tooling.
 
 ## Quick start (5 minutes)
 
