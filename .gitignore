@@ -40,6 +40,7 @@ dataset_cybercane/healthcare_synthetic_*.csv
 *.tex
 *.png
 *.jpg
+!dataset_cybercane/cybercane_architecture.jpg
 *.jpeg
 *.svg
 *.md

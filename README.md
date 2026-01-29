@@ -11,6 +11,12 @@ This repository extends the prototype at https://github.com/pawelsloboda5/UMBC-h
 - **Privacy by design:** PII is redacted before any external API call; retrieval uses a phishing-only corpus.
 - **Formal explanations:** PhishOnt maps observed indicators to attack types with verifiable reasoning chains.
 
+## Architecture
+
+<p align="center">
+  <img src="dataset_cybercane/cybercane_architecture.jpg" alt="CyberCane Architecture" width="800"/>
+</p>
+
 ## Results
 Evaluations use Nazario.clean + SpamAssassin (test n=1,110) and DataPhish 2025 (test n=2,300; 60% LLM-generated).
 
@@ -18,7 +24,7 @@ Table 1: Detection performance (precision/recall/FPR)
 | Dataset (test) | Method | Precision | Recall | FPR |
 | --- | --- | --- | --- | --- |
 | Nazario.clean + SpamAssassin | Phase 1 (rules) | 83.0% | 17.8% | 2.9% |
-| Nazario.clean + SpamAssassin | Phase 2 (RAG, k=8) | 98.9% | 17.8% | 0.16% |
+| Nazario.clean + SpamAssassin | Phase 2 (RAG, k=8) | 99.5% | 17.8% | 0.16% |
 | DataPhish 2025 | Phase 1 (rules) | 93.4% | 20.5% | — |
 | DataPhish 2025 | Phase 2 (RAG, k=8) | 98.2% | 99.1% | — |
 
@@ -27,7 +33,7 @@ Table 1: Detection performance (precision/recall/FPR)
 Table 2: Privacy and cost tradeoffs vs direct LLM baseline
 | Method | Precision | Recall | F1 | FPR | Cost/email | PHI exposure |
 | --- | --- | --- | --- | --- | --- | --- |
-| CyberCane (RAG, redacted) | 98.9% | 17.8% | 30.1% | 0.16% | $0.0017 | 0% |
+| CyberCane (RAG, redacted) | 99.5% | 17.8% | 30.2% | 0.16% | $0.0017 | 0% |
 | GPT-4 Direct (gpt-4.1-mini, unredacted) | 93.2% | 99.0% | 96.0% | 5.9% | $0.0001 | 53.2% |
 
 Table 3: PhishOnt coverage on the test split
@@ -37,7 +43,7 @@ Table 3: PhishOnt coverage on the test split
 | Phishing (n=495) | 77.4% |
 | Benign (n=615) | 91.5% |
 
-Healthcare case study estimates 259.6x ROI for a 10K-email/day organization.
+Healthcare case study estimates 542x ROI for a 10K-email/day organization.
 
 ## System overview
 - **Phase 1 (Deterministic):** DNS validation (MX/SPF/DMARC) + URL heuristics + urgency/credential cues.
