@@ -23,8 +23,19 @@ reports/
 Manuscript/
 docs/
 api/samples/
-dataset_cybercane/
+# dataset_cybercane/ - NOW TRACKED for reproducibility files
+# Synthetic data pipeline artifacts (exclude)
+dataset_cybercane/contamination_report.json
+dataset_cybercane/dedup_report.json
+dataset_cybercane/manifest.json
+dataset_cybercane/DATASET_CARD.md
+dataset_cybercane/synthetic_healthcare_*.csv
+dataset_cybercane/healthcare_synthetic_*.csv
+
+# CSV files (exclude by default, whitelist specific files)
 *.csv
+!dataset_cybercane/Nazario.clean.csv
+!dataset_cybercane/dataphish_*.csv
 *.pdf
 *.tex
 *.png
@@ -57,3 +68,16 @@ Thumbs.db
 
 # Local synthetic V3 artifacts
 api/app/evaluation/*v3*.py
+
+# Evaluation scripts (temporary/local)
+run_nazario_spam_eval.py
+run_nazario_spam_phase2.py
+run_operating_modes_eval.py
+filter_nazario_spam.py
+sweep_operating_modes.py
+
+# Temporary HTML outputs
+cybercane.html
+
+# Large datasets (not for version control)
+Dataset-2025/

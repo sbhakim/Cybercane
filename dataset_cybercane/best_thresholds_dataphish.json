@@ -1,0 +1,17 @@
+{
+  "top_similarity_threshold": 0.4,
+  "avg_top3_threshold": 0.35,
+  "neighbors_k": 8,
+  "metrics": {
+    "precision": 1.0,
+    "recall": 0.9471830985915493,
+    "f1": 0.9728752260397829,
+    "fpr": 0.0,
+    "tp": 269,
+    "fp": 0,
+    "fn": 15,
+    "tn": 116
+  },
+  "tuned_on": "dataphish_val",
+  "timestamp": "2026-01-21T10:10:06.027814"
+}
