@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+
+        h2 {
+            font-size: 1.8em;
+            font-weight: 600;
+            margin-top: 50px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+
+        .authors {
+            text-align: center;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .authors a {
+            color: #1a73e8;
+            text-decoration: none;
+        }
+
+        .authors a:hover {
+            text-decoration: underline;
+        }
+
+        .affiliations {
+            text-align: center;
+            font-size: 0.95em;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .conference {
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #d32f2f;
+            margin-bottom: 20px;
+        }
+
+        .links {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 5px 10px;
+            background-color: #1a73e8;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #1557b0;
+        }
+
+        .btn.github {
+            background-color: #24292e;
+        }
+
+        .btn.github:hover {
+            background-color: #0d1117;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .comparison-box {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background-color: #fafafa;
+        }
+
+        .comparison-box h4 {
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #1a73e8;
+        }
+
+        .comparison-box.phase1 h4 {
+            color: #f57c00;
+        }
+
+        .comparison-box.phase2 h4 {
+            color: #388e3c;
+        }
+
+        .comparison-box.baseline h4 {
+            color: #d32f2f;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .check {
+            color: #388e3c;
+            font-weight: bold;
+        }
+
+        .cross {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+
+        .architecture {
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .architecture img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.95em;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .highlight {
+            background-color: #e3f2fd;
+            font-weight: 600;
+        }
+
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.9em;
+            border: 1px solid #e0e0e0;
+        }
+
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        .abstract {
+            background-color: #f9f9f9;
+            padding: 25px;
+            border-left: 4px solid #1a73e8;
+            margin: 30px 0;
+            font-size: 1.05em;
+            line-height: 1.7;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .metric-card {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #1a73e8;
+            margin: 10px 0;
+        }
+
+        .metric-label {
+            font-size: 1.1em;
+            color: #666;
+        }
+
+        .footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <h1>CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning</h1>
+
+        <div class="authors">
+            Safayat Bin Hakim<sup>1</sup>,
+            Aniqa Afzal<sup>1</sup>,
+            Pawel Sloboda<sup>2</sup>,
+            Qi Zhao<sup>1</sup>,
+            Vigna Majmundar<sup>1</sup>,
+            Houbing Herbert Song<sup>1</sup>
+        </div>
+
+        <div class="affiliations">
+            <sup>1</sup>University of Maryland, Baltimore County &nbsp;&nbsp;&nbsp;
+            <sup>2</sup>Bowie State University
+        </div>
+
+        <div class="conference">
+            Under Review
+        </div>
+
+        <div class="links">
+            <a href="https://github.com/sbhakim/Cybercane" class="btn github">📁 GitHub</a>
+            <a href="#" class="btn">📄 Paper (Coming Soon)</a>
+            <a href="https://github.com/sbhakim/Cybercane#quick-start-5-minutes" class="btn">🚀 Quick Start</a>
+            <a href="https://github.com/sbhakim/Cybercane/tree/main/dataset_cybercane" class="btn">📊 Datasets</a>
+        </div>
+
+        <!-- Comparison Grid -->
+        <div class="comparison-grid">
+            <div class="comparison-box phase1">
+                <h4>Phase 1: Symbolic Rules</h4>
+                <ul class="feature-list">
+                    <li><span class="check">✓</span> Zero cost ($0)</li>
+                    <li><span class="check">✓</span> Explainable decisions</li>
+                    <li><span class="check">✓</span> No PHI exposure</li>
+                    <li><span class="cross">✗</span> Lower precision (83.0%)</li>
+                    <li><span class="cross">✗</span> Higher FPR (2.9%)</li>
+                </ul>
+            </div>
+
+            <div class="comparison-box phase2">
+                <h4>Phase 2: RAG Pipeline</h4>
+                <ul class="feature-list">
+                    <li><span class="check">✓</span> High precision (99.5%)</li>
+                    <li><span class="check">✓</span> Low FPR (0.16%)</li>
+                    <li><span class="check">✓</span> PII redacted</li>
+                    <li><span class="check">✓</span> Ontology reasoning</li>
+                    <li><span class="check">✓</span> Cost-effective ($0.0017)</li>
+                </ul>
+            </div>
+
+            <div class="comparison-box baseline">
+                <h4>GPT-4 Direct Baseline</h4>
+                <ul class="feature-list">
+                    <li><span class="check">✓</span> High recall (99.0%)</li>
+                    <li><span class="check">✓</span> Lowest cost ($0.0001)</li>
+                    <li><span class="cross">✗</span> Lower precision (93.2%)</li>
+                    <li><span class="cross">✗</span> High FPR (5.9%)</li>
+                    <li><span class="cross">✗</span> 53.2% PHI exposure</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">99.5%</div>
+                <div class="metric-label">Phase 2 Precision</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">0.16%</div>
+                <div class="metric-label">False Positive Rate</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">542×</div>
+                <div class="metric-label">Healthcare ROI</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">0%</div>
+                <div class="metric-label">PHI Exposure</div>
+            </div>
+        </div>
+
+        <!-- Abstract -->
+        <h2>Abstract</h2>
+        <div class="abstract">
+            CyberCane is a privacy-first phishing detection system that combines deterministic rules, retrieval-augmented reasoning, and formal ontology inference to deliver transparent decisions in privacy-critical domains. We propose a neuro-symbolic dual-phase pipeline: Phase 1 applies symbolic checks (DNS validation, URL heuristics, content patterns) for high-confidence verdicts, while Phase 2 escalates ambiguous cases to a RAG-based semantic classifier with privacy-preserving PII redaction. Our system integrates PhishOnt, a formal OWL ontology mapping observed indicators to attack taxonomies with verifiable reasoning chains. Evaluated on Nazario.clean + SpamAssassin (n=1,110) and DataPhish 2025 (n=2,300), CyberCane achieves 99.5% precision with 0.16% false positive rate while maintaining zero PHI exposure. A healthcare case study demonstrates 542× return on investment for organizations processing 10,000 emails daily.
+        </div>
+
+        <!-- Architecture -->
+        <h2>System Architecture</h2>
+        <div class="architecture">
+            <img src="images/cybercane_architecture.jpg" alt="CyberCane Neuro-Symbolic Architecture">
+            <p style="margin-top: 10px; color: #666; font-style: italic;">Dual-phase neuro-symbolic pipeline with privacy-preserving RAG and formal ontology reasoning.</p>
+        </div>
+
+        <!-- Healthcare Application -->
+        <h2>Healthcare Application: Domain-Specific Threat Taxonomy</h2>
+        <div class="architecture">
+            <img src="images/domain_threat_taxonomy-1.png" alt="Domain-Specific Phishing Threat Taxonomy for Healthcare">
+            <p style="margin-top: 10px; color: #666; font-style: italic;">
+                Healthcare-specific threat taxonomy showing attack distribution: 34% Social Engineering, 26% AI Content, 20.5% Insurance Phishing, 19.5% Appointment Scams. Framework generalizes to finance, legal, and government domains.
+            </p>
+        </div>
+
+        <!-- Results -->
+        <h2>Results</h2>
+
+        <h3>Table 1: Detection Performance (Precision/Recall/FPR)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Dataset (test)</th>
+                    <th>Method</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>FPR</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td rowspan="2">Nazario.clean + SpamAssassin<br>(n=1,110)</td>
+                    <td>Phase 1 (Rules)</td>
+                    <td>83.0%</td>
+                    <td>17.8%</td>
+                    <td>2.9%</td>
+                </tr>
+                <tr class="highlight">
+                    <td>Phase 2 (RAG, k=8)</td>
+                    <td><strong>99.5%</strong></td>
+                    <td><strong>17.8%</strong></td>
+                    <td><strong>0.16%</strong></td>
+                </tr>
+                <tr>
+                    <td rowspan="2">DataPhish 2025<br>(n=2,300; 60% LLM-generated)</td>
+                    <td>Phase 1 (Rules)</td>
+                    <td>93.4%</td>
+                    <td>20.5%</td>
+                    <td>—</td>
+                </tr>
+                <tr>
+                    <td>Phase 2 (RAG, k=8)</td>
+                    <td>98.2%</td>
+                    <td>99.1%</td>
+                    <td>—</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Table 2: Privacy and Cost Tradeoffs vs Direct LLM Baseline</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Method</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>F1</th>
+                    <th>FPR</th>
+                    <th>Cost/email</th>
+                    <th>PHI Exposure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="highlight">
+                    <td><strong>CyberCane (RAG, redacted)</strong></td>
+                    <td><strong>99.5%</strong></td>
+                    <td>17.8%</td>
+                    <td>30.2%</td>
+                    <td><strong>0.16%</strong></td>
+                    <td>$0.0017</td>
+                    <td><strong>0%</strong></td>
+                </tr>
+                <tr>
+                    <td>GPT-4 Direct (unredacted)</td>
+                    <td>93.2%</td>
+                    <td><strong>99.0%</strong></td>
+                    <td><strong>96.0%</strong></td>
+                    <td>5.9%</td>
+                    <td><strong>$0.0001</strong></td>
+                    <td>53.2%</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Table 3: Operating Modes (Tunable Thresholds)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Mode</th>
+                    <th>Similarity Threshold</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>F1</th>
+                    <th>FPR</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Conservative</td>
+                    <td>0.50</td>
+                    <td>100.0%</td>
+                    <td>11.5%</td>
+                    <td>20.7%</td>
+                    <td>0.16%</td>
+                </tr>
+                <tr>
+                    <td>Baseline</td>
+                    <td>0.45</td>
+                    <td>100.0%</td>
+                    <td>13.7%</td>
+                    <td>24.1%</td>
+                    <td>0.16%</td>
+                </tr>
+                <tr class="highlight">
+                    <td><strong>Balanced (Default)</strong></td>
+                    <td>0.40</td>
+                    <td><strong>99.5%</strong></td>
+                    <td><strong>17.8%</strong></td>
+                    <td><strong>30.2%</strong></td>
+                    <td><strong>0.16%</strong></td>
+                </tr>
+                <tr>
+                    <td>Moderate</td>
+                    <td>0.35</td>
+                    <td>98.7%</td>
+                    <td>29.1%</td>
+                    <td>44.9%</td>
+                    <td>0.16%</td>
+                </tr>
+                <tr>
+                    <td>Aggressive</td>
+                    <td>0.30</td>
+                    <td>94.7%</td>
+                    <td>41.0%</td>
+                    <td>57.1%</td>
+                    <td>0.16%</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="margin-top: 10px; color: #666; font-style: italic;">
+            Note: FPR remains constant at 0.16% across all modes via shared Phase 1 high-confidence threshold (score ≥ 5).
+        </p>
+
+        <h3>Table 4: PhishOnt Ontology Coverage</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Split</th>
+                    <th>Coverage</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Overall (n=1,110)</td>
+                    <td><strong>85.2%</strong></td>
+                    <td>All test emails</td>
+                </tr>
+                <tr>
+                    <td>Phishing (n=495)</td>
+                    <td>77.4%</td>
+                    <td>Phishing emails classified</td>
+                </tr>
+                <tr>
+                    <td>Benign (n=615)</td>
+                    <td><strong>91.5%</strong></td>
+                    <td>Legitimate emails classified</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <!-- Methodology -->
+        <h2>Methodology</h2>
+
+        <h3>Phase 1: Deterministic Symbolic Analysis</h3>
+        <p>Applies rule-based heuristics without external API calls:</p>
+        <ul style="margin-left: 30px; margin-top: 10px;">
+            <li><strong>DNS validation:</strong> MX record lookup, SPF/DMARC compliance checks</li>
+            <li><strong>URL analysis:</strong> IP literal detection, shortened URL identification, domain lookalikes</li>
+            <li><strong>Content patterns:</strong> Urgency cues, credential requests, freemail/brand mismatches</li>
+            <li><strong>Decision threshold:</strong> Score ≥ 5 → High-confidence verdict (skip Phase 2)</li>
+        </ul>
+
+        <h3>Phase 2: Privacy-Preserving RAG</h3>
+        <p>Escalates ambiguous cases through a privacy-first pipeline:</p>
+        <ol style="margin-left: 30px; margin-top: 10px;">
+            <li><strong>PII Redaction:</strong> Regex-based entity removal (emails, phone numbers, SSNs, medical IDs)</li>
+            <li><strong>Embedding:</strong> OpenAI text-embedding-3-small (512-dim vectors)</li>
+            <li><strong>HNSW Retrieval:</strong> k=8 nearest neighbors from phishing-only corpus (pgvector)</li>
+            <li><strong>LLM Reasoning:</strong> GPT-4.1-mini generates explanations with retrieved context</li>
+            <li><strong>Conservative Thresholds:</strong> Top similarity ≥ 0.40, Avg-Top-3 ≥ 0.35</li>
+        </ol>
+
+        <h3>PhishOnt: Formal Ontology Reasoning</h3>
+        <p>OWL-based ontology with SWRL rules maps observed indicators to formal attack classifications:</p>
+        <ul style="margin-left: 30px; margin-top: 10px;">
+            <li>8 attack types (credential phishing, BEC, malware distribution, etc.)</li>
+            <li>15 indicator classes (domain spoofing, urgency, missing authentication)</li>
+            <li>Verifiable reasoning chains for interpretability</li>
+            <li>85.2% coverage on test split (n=1,110)</li>
+        </ul>
+
+        <h3>Multi-Layer Explanation System</h3>
+        <div class="architecture">
+            <img src="images/explanation_generation-1.png" alt="Multi-Layer Explanation Generation Example">
+            <p style="margin-top: 10px; color: #666; font-style: italic;">
+                Example Medicare phishing detection showing three explanation layers: (1) Symbolic evidence from DNS/SMTP analysis, (2) Retrieved similar phishing examples with similarity scores, (3) GPT-4.1-mini contextual reasoning. Final verdict: 94% confidence with actionable recommendations.
+            </p>
+        </div>
+
+        <!-- Reproducibility -->
+        <h2>Reproducibility</h2>
+        <p>All evaluation scripts, datasets, and threshold configurations are available in the repository:</p>
+        <ul style="margin-left: 30px; margin-top: 10px;">
+            <li><code>reports_cybercane/eval_test_split.py</code> — Test split evaluator</li>
+            <li><code>reports_cybercane/bootstrap_ci.py</code> — 1000-sample bootstrap confidence intervals</li>
+            <li><code>reports_cybercane/statistical_significance.py</code> — McNemar χ² tests</li>
+            <li><code>reports_cybercane/cost_benefit_analysis.py</code> — ROI and cost-benefit calculations</li>
+            <li><code>reports_cybercane/tune_thresholds.py</code> — Threshold optimization (F1-maximizing grid search)</li>
+            <li><code>dataset_cybercane/best_thresholds_dataphish.json</code> — Optimal threshold configuration</li>
+            <li><code>dataset_cybercane/Nazario.clean.csv</code> — Nazario phishing corpus (n=1,110)</li>
+            <li><code>dataset_cybercane/dataphish_test.jsonl</code> — DataPhish 2025 test split (n=2,300)</li>
+            <li><code>dataset_cybercane/dataphish_val.jsonl</code> — DataPhish 2025 validation split</li>
+        </ul>
+
+        <!-- Quick Start -->
+        <h2>Quick Start</h2>
+
+        <h3>Docker Deployment (Recommended)</h3>
+        <pre><code>docker compose up --build
+# Web: http://localhost:3000 | API: http://localhost:8000 | Docs: http://localhost:8000/docs</code></pre>
+
+        <h3>Try the API</h3>
+        <pre><code># Phase 1: Rules-based scan (no API key required)
+curl -X POST http://localhost:8000/scan \
+  -H "Content-Type: application/json" \
+  -d '{"sender":"alert@bank.com","subject":"Urgent: verify account","body":"Click: http://bit.ly/x","url":1}'
+
+# Phase 2: Full RAG analysis (requires OPENAI_API_KEY)
+curl -X POST http://localhost:8000/ai/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"sender":"alert@bank.com","subject":"Urgent: verify account","body":"Click: http://bit.ly/x","url":1}'</code></pre>
+
+        <!-- Citation -->
+        <h2>Citation</h2>
+        <pre><code>@inproceedings{cybercane2026,
+  title={CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning},
+  author={Hakim, Safayat Bin and Afzal, Aniqa and Sloboda, Pawel and Zhao, Qi and Majmundar, Vigna and Song, Houbing Herbert},
+  booktitle={Under Review},
+  year={2026}
+}</code></pre>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>For questions or collaboration inquiries, please open an issue on <a href="https://github.com/sbhakim/Cybercane">GitHub</a> or email safayat.b.hakim@gmail.com</p>
+            <p style="margin-top: 10px;">This repository extends the prototype at <a href="https://github.com/pawelsloboda5/UMBC-hackathon">UMBC-hackathon</a>.</p>
+        </div>
+    </div>
+</body>
+</html>
