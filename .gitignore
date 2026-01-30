@@ -21,7 +21,7 @@ reports/
 !reports_cybercane/
 !reports_cybercane/**
 Manuscript/
-docs/
+# docs/ - NOW TRACKED for GitHub Pages website
 api/samples/
 # dataset_cybercane/ - NOW TRACKED for reproducibility files
 # Synthetic data pipeline artifacts (exclude)
