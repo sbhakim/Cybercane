@@ -41,6 +41,7 @@ dataset_cybercane/healthcare_synthetic_*.csv
 *.png
 *.jpg
 !dataset_cybercane/cybercane_architecture.jpg
+!docs/images/*.jpg
 *.jpeg
 *.svg
 *.md
