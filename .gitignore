@@ -15,6 +15,9 @@ api/.mypy_cache/
 **/__pycache__/
 *.py[cod]
 
+# Backup files
+*.backup
+
 # Data, reports, and manuscript artifacts (excluded for now)
 datasets/
 reports/
