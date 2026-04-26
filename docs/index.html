@@ -786,7 +786,7 @@
         <!-- Abstract -->
         <h2>Abstract</h2>
         <div class="abstract">
-            CyberCane is a privacy-first phishing detection system that combines deterministic rules, retrieval-augmented reasoning, and formal ontology inference to deliver transparent decisions in privacy-critical domains. We propose a neuro-symbolic dual-phase pipeline: Phase 1 applies symbolic checks (DNS validation, URL heuristics, content patterns) for high-confidence verdicts, while Phase 2 escalates ambiguous cases to a RAG-based semantic classifier with privacy-preserving PII redaction. Our system integrates PhishOnt, a formal OWL ontology mapping observed indicators to attack taxonomies with verifiable reasoning chains. Evaluated on Nazario.clean + SpamAssassin (n=1,110) and DataPhish 2025 (n=2,300), CyberCane achieves 99.5% precision with 0.16% false positive rate while maintaining zero PHI exposure. A healthcare case study demonstrates 542× return on investment for organizations processing 10,000 emails daily.
+            Privacy-critical domains require phishing detection systems that satisfy contradictory constraints: near-zero false positives to prevent workflow disruption, transparent explanations for non-expert staff, strict regulatory compliance prohibiting sensitive data exposure to external APIs, and robustness against AI-generated attacks. Existing rule-based systems are brittle to novel campaigns, while LLM-based detectors violate privacy regulations through unredacted data transmission. We introduce CyberCane, a neuro-symbolic framework integrating deterministic symbolic analysis with privacy-preserving retrieval-augmented generation (RAG). Our dual-phase pipeline applies lightweight symbolic rules to email metadata, then escalates borderline cases to semantic classification via RAG with automated sensitive data redaction and retrieval from a phishing-only corpus. We further introduce PhishOnt, an OWL ontology enabling verifiable attack classification through formal reasoning chains. Evaluation on DataPhish 2025 (12.3k emails; mixed human/LLM) and Nazario/SpamAssassin demonstrates a 78.6-point recall gain over symbolic-only detection on AI-generated threats, with precision exceeding 98% and FPR as low as 0.16%. Healthcare deployment projects a 542&times; ROI; tunable operating points support diverse risk tolerances, with open-source implementation at <a href="https://github.com/sbhakim/Cybercane">github.com/sbhakim/Cybercane</a>.
         </div>
 
         <!-- Architecture -->
@@ -834,7 +834,7 @@
                     <td><strong>0.16%</strong></td>
                 </tr>
                 <tr>
-                    <td rowspan="2">DataPhish 2025<br>(n=2,300; 60% LLM-generated)</td>
+                    <td rowspan="2">DataPhish 2025<br>(n=2,337; ~75% LLM-generated)</td>
                     <td>Phase 1 (Rules)</td>
                     <td>93.4%</td>
                     <td>20.5%</td>
@@ -864,13 +864,22 @@
             </thead>
             <tbody>
                 <tr class="highlight">
-                    <td><strong>CyberCane (RAG, redacted)</strong></td>
+                    <td><strong>CyberCane (RAG, k=8)</strong></td>
                     <td><strong>99.5%</strong></td>
                     <td>37.2%</td>
                     <td>54.1%</td>
                     <td><strong>0.16%</strong></td>
                     <td>$0.0017</td>
-                    <td><strong>0%</strong></td>
+                    <td><strong>0%</strong> &#8224;</td>
+                </tr>
+                <tr>
+                    <td>TF-IDF LR + Redaction &#167;</td>
+                    <td>98.8%</td>
+                    <td>97.4%</td>
+                    <td>98.1%</td>
+                    <td>0.98%</td>
+                    <td><strong>$0</strong></td>
+                    <td><strong>0%</strong> &#8224;</td>
                 </tr>
                 <tr>
                     <td>GPT-4 Direct (unredacted)</td>
@@ -878,7 +887,7 @@
                     <td><strong>99.0%</strong></td>
                     <td><strong>96.0%</strong></td>
                     <td>5.9%</td>
-                    <td><strong>$0.0001</strong></td>
+                    <td>$0.0001</td>
                     <td>53.2%</td>
                 </tr>
             </tbody>
@@ -941,7 +950,9 @@
         </table>
 
         <p style="margin-top: 10px; color: #666; font-style: italic;">
-            Note: FPR remains constant at 0.16% across all modes via shared Phase 1 high-confidence threshold (score ≥ 5).
+            Note: FPR remains constant at 0.16% across all modes via shared Phase 1 high-confidence threshold (score &ge; 5).
+            &#8224; PHI redacted before API transmission. &#167; Privacy-constrained fair comparison using same redaction pipeline as CyberCane.
+            CyberCane provides 6&times; lower FPR (0.16% vs. 0.98%), PhishOnt verifiable reasoning chains, and tunable operating points.
         </p>
 
         <h3>Table 4: PhishOnt Ontology Coverage</h3>
@@ -956,21 +967,45 @@
             <tbody>
                 <tr>
                     <td>Overall (n=1,110)</td>
-                    <td><strong>85.2%</strong></td>
+                    <td><strong>85.0%</strong></td>
                     <td>All test emails</td>
                 </tr>
                 <tr>
                     <td>Phishing (n=495)</td>
-                    <td>77.4%</td>
+                    <td>76.8%</td>
                     <td>Phishing emails classified</td>
                 </tr>
                 <tr>
                     <td>Benign (n=615)</td>
-                    <td><strong>91.5%</strong></td>
+                    <td><strong>91.7%</strong></td>
                     <td>Legitimate emails classified</td>
                 </tr>
             </tbody>
         </table>
+
+        <!-- Notable Findings -->
+        <h2>Notable Findings</h2>
+
+        <h3>Layered Defense: Phase 2 Closes Phase 1 Blind Spots</h3>
+        <p class="reveal">
+            79.5% of phishing emails evade Phase 1 symbolic rules (rising to 95.8% for Neutral-tone and 97.2% for Greed-tone emails).
+            Phase 2 RAG recovers 99.0% of these Phase 1-evaded attacks, resulting in a combined two-phase miss rate of only <strong>0.8%</strong>.
+            This demonstrates that the dual-phase architecture is essential: neither phase alone achieves healthcare-grade performance.
+        </p>
+
+        <h3>PII Quantification: Redaction Scope</h3>
+        <p class="reveal">
+            50.7% of DataPhish 2025 emails contain at least one PII item (mean 1.63 items/email), confirming that
+            unredacted transmission to external APIs exposes sensitive data at scale. CyberCane's automated redaction
+            pipeline eliminates this exposure entirely before any API call, achieving 0% PHI leakage across all test conditions.
+        </p>
+
+        <h3>Confidence Discriminability</h3>
+        <p class="reveal">
+            Phase 2 RAG produces meaningfully separated confidence distributions: phishing emails receive a mean similarity
+            score of 54.6% versus 52.8% for benign emails. Critically, 85.5% of benign emails fall below the phishing mean,
+            providing a clear statistical basis for the conservative 0.40 threshold that drives the 0.16% FPR.
+        </p>
 
         <!-- Methodology -->
         <h2>Methodology</h2>
@@ -988,7 +1023,7 @@
         <p class="reveal">Escalates ambiguous cases through a privacy-first pipeline:</p>
         <ol class="reveal" style="margin-left: 30px; margin-top: 10px;">
             <li><strong>PII Redaction:</strong> Regex-based entity removal (emails, phone numbers, SSNs, medical IDs)</li>
-            <li><strong>Embedding:</strong> OpenAI text-embedding-3-small (512-dim vectors)</li>
+            <li><strong>Embedding:</strong> OpenAI text-embedding-3-small (1536-dim vectors)</li>
             <li><strong>HNSW Retrieval:</strong> k=8 nearest neighbors from phishing-only corpus (pgvector)</li>
             <li><strong>LLM Reasoning:</strong> GPT-4.1-mini generates explanations with retrieved context</li>
             <li><strong>Conservative Thresholds:</strong> Top similarity ≥ 0.40, Avg-Top-3 ≥ 0.35</li>
@@ -1000,7 +1035,7 @@
             <li>8 attack types (credential phishing, BEC, malware distribution, etc.)</li>
             <li>15 indicator classes (domain spoofing, urgency, missing authentication)</li>
             <li>Verifiable reasoning chains for interpretability</li>
-            <li>85.2% coverage on test split (n=1,110)</li>
+            <li>85.0% coverage on test split (n=1,110)</li>
         </ul>
 
         <h3>Multi-Layer Explanation System</h3>
@@ -1022,7 +1057,7 @@
             <li><code>reports_cybercane/tune_thresholds.py</code> — Threshold optimization (F1-maximizing grid search)</li>
             <li><code>dataset_cybercane/best_thresholds_dataphish.json</code> — Optimal threshold configuration</li>
             <li><code>dataset_cybercane/Nazario.clean.csv</code> — Nazario phishing corpus (n=1,110)</li>
-            <li><code>dataset_cybercane/dataphish_test.jsonl</code> — DataPhish 2025 test split (n=2,300)</li>
+            <li><code>dataset_cybercane/dataphish_test.jsonl</code> — DataPhish 2025 test split (n=2,337)</li>
             <li><code>dataset_cybercane/dataphish_val.jsonl</code> — DataPhish 2025 validation split</li>
         </ul>
 
@@ -1046,10 +1081,9 @@ curl -X POST http://localhost:8000/ai/analyze \
 
         <!-- Citation -->
         <h2>Citation</h2>
-        <pre class="reveal"><code>@inproceedings{cybercane2026,
+        <pre class="reveal"><code>@article{cybercane2026,
   title={CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning},
-  author={Hakim, Safayat Bin and Afzal, Aniqa and Zhao, Qi and Majmundar, Vigna, and Sloboda, Pawel and Song, Houbing Herbert},
-  booktitle={Under Review},
+  author={Hakim, Safayat Bin and Afzal, Aniqa and Zhao, Qi and Majmundar, Vigna and Sloboda, Pawel and Song, Houbing Herbert},
   year={2026}
 }</code></pre>
 
