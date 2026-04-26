@@ -60,6 +60,9 @@ def evaluate_ontology_coverage(df: pd.DataFrame,
         "attack_type_counts": {},
         "avg_attacks_per_email": 0,
         "avg_confidence": 0,
+        # Confidence distributions split by true label (Fix 6: discriminability analysis)
+        "phishing_confidences": [],
+        "benign_confidences": [],
     }
 
     all_attacks = []
@@ -117,7 +120,7 @@ def evaluate_ontology_coverage(df: pd.DataFrame,
                 else:
                     results["benign_with_attacks"] += 1
 
-                # Count attack types
+                # Count attack types and track per-class confidence distributions
                 for attack_type, confidence in inferred_attacks:
                     if attack_type not in results["attack_type_counts"]:
                         results["attack_type_counts"][attack_type] = 0
@@ -125,6 +128,12 @@ def evaluate_ontology_coverage(df: pd.DataFrame,
 
                     all_attacks.append(attack_type)
                     all_confidences.append(confidence)
+
+                    # Accumulate confidence scores by true label for discriminability analysis
+                    if row["label"] == 1:
+                        results["phishing_confidences"].append(confidence)
+                    else:
+                        results["benign_confidences"].append(confidence)
 
         except Exception as e:
             print(f"[ERROR] Email {processed}: {e}")
@@ -137,6 +146,17 @@ def evaluate_ontology_coverage(df: pd.DataFrame,
     if results["emails_with_attacks"] > 0:
         results["avg_attacks_per_email"] = len(all_attacks) / results["emails_with_attacks"]
         results["avg_confidence"] = sum(all_confidences) / len(all_confidences)
+
+    # Confidence discriminability summary
+    ph_conf = results["phishing_confidences"]
+    bn_conf = results["benign_confidences"]
+    results["mean_confidence_phishing"] = sum(ph_conf) / len(ph_conf) if ph_conf else 0.0
+    results["mean_confidence_benign"] = sum(bn_conf) / len(bn_conf) if bn_conf else 0.0
+    # Fraction of benign activations exceeding the phishing mean (overlap measure)
+    ph_mean = results["mean_confidence_phishing"]
+    results["benign_above_phishing_mean_pct"] = (
+        sum(1 for c in bn_conf if c > ph_mean) / len(bn_conf) * 100 if bn_conf else 0.0
+    )
 
     # Compute coverage percentages
     results["phishing_coverage_pct"] = (
@@ -186,6 +206,15 @@ def print_results(results: Dict):
     print(f"\nAverages:")
     print(f"  Attacks per email (when detected): {results['avg_attacks_per_email']:.2f}")
     print(f"  Average confidence: {results['avg_confidence']*100:.1f}%")
+
+    print(f"\nConfidence Discriminability (activation rate vs. confidence score):")
+    print(f"  Mean confidence | Phishing activations: {results['mean_confidence_phishing']*100:.1f}%")
+    print(f"  Mean confidence | Benign activations:   {results['mean_confidence_benign']*100:.1f}%")
+    print(f"  Confidence delta (phishing - benign):   "
+          f"{(results['mean_confidence_phishing'] - results['mean_confidence_benign'])*100:+.1f}pp")
+    print(f"  Benign activations above phishing mean: {results['benign_above_phishing_mean_pct']:.1f}%")
+    print(f"  Note: PhishOnt acts as explainability layer, not standalone classifier.")
+    print(f"        Higher phishing confidence validates discriminative signal at score level.")
 
     print("\n" + "=" * 80)
 

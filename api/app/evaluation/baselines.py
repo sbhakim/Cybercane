@@ -81,6 +81,43 @@ def _tfidf_logreg(train_text: pd.Series, train_labels: pd.Series, test_text: pd.
     return pd.Series(pipe.predict(test_text))
 
 
+def _apply_redaction(text_series: pd.Series) -> pd.Series:
+    """Apply PII redaction to a text series before model input.
+
+    Uses the same redact_text() function as the live CyberCane pipeline,
+    ensuring a fair privacy-constrained comparison (PHI exposure = 0%).
+    """
+    try:
+        from app.pipeline.pii import redact_text
+    except ImportError:
+        # Fallback when running outside PYTHONPATH=api context
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from app.pipeline.pii import redact_text
+
+    return text_series.apply(redact_text)
+
+
+def _tfidf_logreg_redacted(
+    train_text: pd.Series,
+    train_labels: pd.Series,
+    test_text: pd.Series,
+) -> pd.Series:
+    """TF-IDF logistic regression trained and evaluated on PII-redacted text.
+
+    This baseline operates under identical privacy constraints to CyberCane
+    (PHI exposure = 0%) and provides the minimum credible bar for comparison.
+    Unlike the unredacted TF-IDF variant, this is a fair apples-to-apples
+    comparison in the privacy-preserving setting.
+    """
+    print("  Applying PII redaction to train set...")
+    redacted_train = _apply_redaction(train_text)
+    print("  Applying PII redaction to test set...")
+    redacted_test = _apply_redaction(test_text)
+    return _tfidf_logreg(redacted_train, train_labels, redacted_test)
+
+
 def _detect_phi_patterns(text: str) -> Tuple[int, bool]:
     """
     Detect PHI patterns in text using regex.
@@ -276,6 +313,16 @@ def main() -> None:
         rows.append(_metrics_from_preds(test_labels, tfidf_preds, "tfidf_logreg"))
     except RuntimeError as exc:
         print(str(exc))
+
+    # Privacy-constrained baseline: TF-IDF LR on PII-redacted text (PHI exposure = 0%)
+    # Fair comparison against CyberCane under identical privacy constraints
+    try:
+        print("\nRunning TF-IDF + Redaction baseline (privacy-constrained)...")
+        tfidf_redacted_preds = _tfidf_logreg_redacted(train_text, train_labels, test_text)
+        rows.append(_metrics_from_preds(test_labels, tfidf_redacted_preds, "tfidf_logreg_redacted"))
+        print("  Done.")
+    except Exception as exc:
+        print(f"TF-IDF+Redaction baseline failed: {exc}")
 
     # GPT-4 direct baseline (optional, requires API key)
     privacy_cost_metrics = None

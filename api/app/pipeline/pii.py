@@ -8,7 +8,7 @@ perfect coverage. Raw PII is never returned.
 """
 
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 # ============================================================================
 # Regex Patterns
@@ -72,7 +72,7 @@ def redact(text: str) -> Tuple[str, Dict[str, int]]:
     return red, counts
 
 
-def redact_text(text: str | None) -> str:
+def redact_text(text: Optional[str]) -> str:
     """Convenience wrapper that returns only the redacted string."""
     if not text:
         return ""
