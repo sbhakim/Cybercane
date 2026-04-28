@@ -4,7 +4,7 @@
 
 CyberCane is a privacy-first phishing detection framework that combines deterministic symbolic rules, retrieval-augmented generation (RAG), and formal OWL ontology reasoning to deliver transparent, auditable decisions in privacy-critical domains such as healthcare and finance.
 
-Research paper — preprint available upon request.
+Research paper — preprint available on arXiv: https://arxiv.org/abs/2604.23563
 
 ---
 
@@ -235,11 +235,12 @@ This repository extends the prototype at [UMBC Hackathon](https://github.com/paw
 
 ```bibtex
 @article{hakim2026cybercane,
-  title  = {CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection
-            with Formal Ontology Reasoning},
-  author = {Hakim, Safayat Bin and Afzal, Aniqa and Zhao, Qi and
-            Majmundar, Vigna and Sloboda, Pawel and Song, Houbing Herbert},
-  year   = {2026}
+  author    = {S. B. Hakim and A. Afzal and Q. Zhao and V. Majmundar and P. Sloboda and H. H. Song},
+  title     = {{CyberCane}: Neuro-Symbolic {RAG} for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning},
+  journal   = {arXiv preprint arXiv:2604.23563},
+  year      = {2026},
+  note      = {[Online]. Available: \url{https://arxiv.org/abs/2604.23563}},
+  primaryclass = {cs.CR}
 }
 ```
 
