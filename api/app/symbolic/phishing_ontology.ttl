@@ -6,7 +6,7 @@
 # ============================================================================
 # PhishOnt: Formal Ontology for Healthcare Phishing Detection
 # ============================================================================
-# Version: 0.1.0
+# Version: 0.2.0
 # Authors: CyberCane Research Team
 # Description: Formal OWL ontology encoding attack patterns, indicators,
 #              and inference rules for neuro-symbolic phishing detection
@@ -16,7 +16,7 @@
 <http://cybercane.ai/ontology/phishing> a owl:Ontology ;
     rdfs:label "PhishOnt - Healthcare Phishing Attack Ontology" ;
     rdfs:comment "Formal knowledge representation for phishing attack classification" ;
-    owl:versionInfo "0.1.0" .
+    owl:versionInfo "0.2.0" .
 
 # ============================================================================
 # TOP-LEVEL ATTACK TAXONOMY
@@ -180,6 +180,67 @@ phish:URLBasedAttack a owl:Class ;
             [ a owl:Restriction ;
               owl:onProperty phish:hasDomainMismatch ;
               owl:hasValue true ]
+        )
+    ] .
+
+# ----------------------------------------------------------------------------
+# Rules 4-8: previously encoded only in Python; now defined here
+# so this file is the single source of truth for the attack-pattern rules.
+# The two parent-level rules get their own defined subclasses: an equivalence
+# on TechnicalAttack / SocialEngineeringAttack themselves would force every
+# subclass (e.g. URLBasedAttack) to satisfy those conditions.
+# ----------------------------------------------------------------------------
+
+# Rule 4: Appointment scam = urgency + freemail sender
+phish:AppointmentScam owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        [ a owl:Restriction ; owl:onProperty phish:hasUrgencyLanguage ; owl:hasValue true ]
+        [ a owl:Restriction ; owl:onProperty phish:hasFreemailSender ; owl:hasValue true ]
+    )
+] .
+
+# Rule 5: Insurance verification phishing = credential request + freemail sender
+phish:InsuranceVerificationPhish owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        [ a owl:Restriction ; owl:onProperty phish:hasCredentialRequest ; owl:hasValue true ]
+        [ a owl:Restriction ; owl:onProperty phish:hasFreemailSender ; owl:hasValue true ]
+    )
+] .
+
+# Rule 6: Prescription fraud = urgency + domain mismatch
+phish:PrescriptionFraud owl:equivalentClass [
+    a owl:Class ;
+    owl:intersectionOf (
+        [ a owl:Restriction ; owl:onProperty phish:hasUrgencyLanguage ; owl:hasValue true ]
+        [ a owl:Restriction ; owl:onProperty phish:hasDomainMismatch ; owl:hasValue true ]
+    )
+] .
+
+# Rule 7: Missing mail authentication = missing MX + missing SPF
+phish:MissingMailAuthentication a owl:Class ;
+    rdfs:subClassOf phish:TechnicalAttack ;
+    rdfs:label "Missing Mail Authentication" ;
+    rdfs:comment "Sender domain lacks mail exchange and sender-policy records" ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            [ a owl:Restriction ; owl:onProperty phish:hasMissingMX ; owl:hasValue true ]
+            [ a owl:Restriction ; owl:onProperty phish:hasMissingSPF ; owl:hasValue true ]
+        )
+    ] .
+
+# Rule 8: Urgent credential request = urgency + credential request
+phish:UrgentCredentialRequest a owl:Class ;
+    rdfs:subClassOf phish:SocialEngineeringAttack ;
+    rdfs:label "Urgent Credential Request" ;
+    rdfs:comment "Pressure to act quickly combined with a request for credentials" ;
+    owl:equivalentClass [
+        a owl:Class ;
+        owl:intersectionOf (
+            [ a owl:Restriction ; owl:onProperty phish:hasUrgencyLanguage ; owl:hasValue true ]
+            [ a owl:Restriction ; owl:onProperty phish:hasCredentialRequest ; owl:hasValue true ]
         )
     ] .
 

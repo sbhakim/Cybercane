@@ -16,7 +16,8 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-from rdflib import Graph, Namespace, URIRef, Literal
+from rdflib import BNode, Graph, Literal, Namespace, URIRef
+from rdflib.collection import Collection
 from rdflib.namespace import RDF, RDFS, OWL
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,8 @@ class PhishingOntologyReasoner:
 
         # Cache attack type URIs for performance
         self._attack_types = self._get_all_attack_types()
+        # Attack-pattern rules parsed from owl:equivalentClass axioms (single source of truth).
+        self._rules = self._parse_rules()
         logger.info(f"Discovered {len(self._attack_types)} attack types in ontology")
 
     def _get_all_attack_types(self) -> List[URIRef]:
@@ -111,111 +114,98 @@ class PhishingOntologyReasoner:
 
     def infer_attack_types(self,
                            indicators: Dict[str, bool],
-                           min_confidence: float = 0.3) -> List[Tuple[str, float]]:
+                           min_confidence: float = 1.0,
+                           include_partial: bool = False) -> List[Tuple[str, float]]:
         """
-        Classify email into attack types using ontology reasoning.
+        Attack classes supported by the observed indicators.
 
-        Algorithm:
-        1. Map Phase 1 indicators to ontology properties
-        2. Query for attack types matching indicator patterns
-        3. Compute confidence as fraction of indicators matching attack definition
-        4. Return ranked list of (attack_type, confidence) tuples
-
-        Args:
-            indicators: Phase 1 indicator dictionary (e.g., {"urgency": True})
-            min_confidence: Minimum confidence threshold (0.0-1.0)
-
-        Returns:
-            List of (attack_type_name, confidence_score) sorted by confidence
-
-        Example:
-            indicators = {"creds_request": True, "missing_mx": True}
-            results = reasoner.infer_attack_types(indicators)
-            # Returns: [("CredentialTheft", 1.0), ("TechnicalAttack", 0.5)]
+        By default only entailed classes (every premise of the defining axiom
+        holds) are returned, each with value 1.0. Partial matches are returned
+        only with include_partial=True, as (name, coverage m/r) with coverage
+        >= min_confidence; coverage is a matching ratio, not a probability.
         """
         if not indicators:
             logger.warning("No indicators provided for inference")
             return []
-
-        # Filter to only True indicators
-        active_indicators = {k: v for k, v in indicators.items() if v}
-
-        if not active_indicators:
-            return []
-
-        # Map indicator keys to ontology property names
-        mapped_indicators = {}
-        for key in active_indicators:
-            prop_name = self._map_indicator_to_property(key)
-            mapped_indicators[prop_name] = True
-
-        # Score each attack type by indicator overlap
-        attack_scores: Dict[str, float] = {}
-
-        for attack_type_uri in self._attack_types:
-            # Get rule structure for this attack type
-            rule = self._get_attack_rule(attack_type_uri)
-            all_of = rule.get("all_of", [])
-            any_of = rule.get("any_of", [])
-
-            if not all_of and not any_of:
-                continue
-
-            # Compute overlap using MAPPED indicators
-            matched_all = sum(1 for ind in all_of if ind in mapped_indicators)
-            matched_any = 1 if any(ind in mapped_indicators for ind in any_of) else 0
-            matched = matched_all + matched_any
-            required = len(all_of) + (1 if any_of else 0)
-
-            if matched > 0:
-                confidence = matched / required if required else 0.0
-                if confidence >= min_confidence and (not any_of or matched_any == 1):
-                    attack_name = self._uri_to_name(attack_type_uri)
-                    attack_scores[attack_name] = confidence
-
-        # Sort by confidence descending
-        ranked = sorted(attack_scores.items(),
-                       key=lambda x: x[1],
-                       reverse=True)
-
-        logger.info(f"Inferred {len(ranked)} attack types from {len(active_indicators)} indicators")
+        res = self.classify(indicators, min_suggest_coverage=min(min_confidence, 1.0))
+        ranked = [(name, 1.0) for name in res["entailed"]]
+        if include_partial:
+            ranked += [(name, cov) for name, cov, _ in res["suggested"] if cov >= min_confidence]
         return ranked
 
+    def _parse_rules(self) -> Dict[str, Dict[str, List[str]]]:
+        """
+        Read each defined class from its owl:equivalentClass axiom.
+
+        Supported pattern: an owl:intersectionOf whose members are
+        hasValue-true restrictions (required premises, "all_of") or one
+        owl:unionOf of such restrictions ("any_of").
+        """
+        def prop_of(node) -> Optional[str]:
+            prop = self.graph.value(node, OWL.onProperty)
+            val = self.graph.value(node, OWL.hasValue)
+            if prop is None or val is None or not bool(val.toPython()):
+                return None
+            return self._uri_to_name(prop)
+
+        rules: Dict[str, Dict[str, List[str]]] = {}
+        for cls, expr in self.graph.subject_objects(OWL.equivalentClass):
+            members = self.graph.value(expr, OWL.intersectionOf)
+            if members is None:
+                continue
+            all_of, any_of = [], []
+            for m in Collection(self.graph, members):
+                union = self.graph.value(m, OWL.unionOf)
+                if union is not None:
+                    any_of.extend(p for p in (prop_of(u) for u in Collection(self.graph, union)) if p)
+                else:
+                    p = prop_of(m)
+                    if p:
+                        all_of.append(p)
+            rules[self._uri_to_name(cls)] = {"all_of": all_of, "any_of": any_of}
+        return rules
+
     def _get_attack_rule(self, attack_type_uri: URIRef) -> Dict[str, List[str]]:
+        """Rule structure for an attack type (empty if the class has no defining axiom)."""
+        return self._rules.get(self._uri_to_name(attack_type_uri), {"all_of": [], "any_of": []})
+
+    def _superclasses(self, name: str) -> List[str]:
+        out = []
+        for sup in self.graph.transitive_objects(self._name_to_uri(name), RDFS.subClassOf):
+            if isinstance(sup, BNode):
+                continue
+            sname = self._uri_to_name(sup)
+            if sname not in (name, "PhishingAttack"):
+                out.append(sname)
+        return out
+
+    def classify(self, indicators: Dict[str, bool], min_suggest_coverage: float = 0.5) -> Dict[str, list]:
         """
-        Return the indicator rule structure for an attack type.
+        Classify observed indicators against the defined attack classes.
 
-        NOTE: Uses hardcoded mappings for reliability.
-        Future: Parse OWL axioms dynamically via SPARQL.
+        Returns:
+            entailed:  defined classes whose premises all hold (asserted)
+            inherited: superclasses of entailed classes (asserted via rdfs:subClassOf)
+            suggested: partial matches as (name, coverage m/r, missing premises);
+                       these are NOT asserted and are reported only as hints
         """
-        attack_name = self._uri_to_name(attack_type_uri)
-
-        # Hardcoded attack patterns matching ontology definitions
-        # (corresponds to OWL equivalentClass axioms in phishing_ontology.ttl)
-        attack_patterns: Dict[str, Dict[str, List[str]]] = {
-            "CredentialTheft": {"all_of": ["hasCredentialRequest", "hasMissingMX"], "any_of": []},
-            "HighConfidencePhishing": {
-                "all_of": ["hasUrgencyLanguage", "hasCredentialRequest", "hasMissingDMARC"],
-                "any_of": [],
-            },
-            "URLBasedAttack": {
-                "all_of": ["hasDomainMismatch"],
-                "any_of": ["hasIPLiteralURL", "hasShortenedURL"],
-            },
-            "AppointmentScam": {"all_of": ["hasUrgencyLanguage", "hasFreemailSender"], "any_of": []},
-            "InsuranceVerificationPhish": {
-                "all_of": ["hasCredentialRequest", "hasFreemailSender"],
-                "any_of": [],
-            },
-            "PrescriptionFraud": {"all_of": ["hasUrgencyLanguage", "hasDomainMismatch"], "any_of": []},
-            "TechnicalAttack": {"all_of": ["hasMissingMX", "hasMissingSPF"], "any_of": []},
-            "SocialEngineeringAttack": {
-                "all_of": ["hasUrgencyLanguage", "hasCredentialRequest"],
-                "any_of": [],
-            },
-        }
-
-        return attack_patterns.get(attack_name, {"all_of": [], "any_of": []})
+        present = {self._map_indicator_to_property(k) for k, v in (indicators or {}).items() if v}
+        entailed, suggested = [], []
+        for name, rule in sorted(self._rules.items()):
+            all_of, any_of = rule["all_of"], rule["any_of"]
+            missing = [p for p in all_of if p not in present]
+            any_ok = (not any_of) or any(p in present for p in any_of)
+            if not any_ok:
+                missing.append("one of (" + ", ".join(any_of) + ")")
+            required = len(all_of) + (1 if any_of else 0)
+            coverage = (required - len(missing)) / required if required else 0.0
+            if not missing:
+                entailed.append(name)
+            elif coverage >= min_suggest_coverage:
+                suggested.append((name, coverage, missing))
+        inherited = sorted({s for e in entailed for s in self._superclasses(e)} - set(entailed))
+        suggested.sort(key=lambda x: -x[1])
+        return {"entailed": entailed, "inherited": inherited, "suggested": suggested}
 
     def get_explanation_chain(self,
                                indicators: Dict[str, bool],
@@ -259,15 +249,18 @@ class PhishingOntologyReasoner:
                 rule_str = all_str or any_str
             explanations.append(f"⚙ Rule: {attack_type} requires {rule_str}")
 
-        # Step 3: Conclusion
-        inferred = self.infer_attack_types(indicators)
-        match = next((conf for name, conf in inferred if name == attack_type), None)
-
-        if match:
-            explanations.append(
-                f"✓ Conclusion: Classified as {attack_type} "
-                f"(confidence: {match*100:.0f}%)"
-            )
+        # Step 3: Conclusion (asserted only when every premise holds)
+        res = self.classify(indicators, min_suggest_coverage=0.0)
+        if attack_type in res["entailed"]:
+            explanations.append(f"✓ Conclusion: all premises hold; {attack_type} is asserted")
+        else:
+            partial = next((x for x in res["suggested"] if x[0] == attack_type), None)
+            if partial:
+                _, cov, missing = partial
+                explanations.append(
+                    f"△ Partial match only ({cov * 100:.0f}% of premises); not asserted. "
+                    f"Missing: {', '.join(self._format_property_name(m) for m in missing)}"
+                )
 
         return explanations
 
@@ -354,9 +347,9 @@ def indicators_to_ontology_format(phase1_indicators: Dict) -> Dict[str, bool]:
     # DNS/auth indicators
     if "auth" in phase1_indicators:
         auth = phase1_indicators["auth"]
-        bool_indicators["missing_mx"] = not auth.get("has_mx", True)
-        bool_indicators["no_spf"] = not auth.get("spf_present", True)
-        bool_indicators["no_dmarc"] = not auth.get("dmarc_present", True)
+        bool_indicators["missing_mx"] = auth.get("has_mx", True) is False
+        bool_indicators["no_spf"] = auth.get("spf_present", True) is False
+        bool_indicators["no_dmarc"] = auth.get("dmarc_present", True) is False
 
     # URL indicators
     if "ip_literal_link" in phase1_indicators:
