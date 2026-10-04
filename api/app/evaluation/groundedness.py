@@ -27,6 +27,8 @@ from app.schemas import EmailIn
 from app.pipeline.classify import classify_email
 from app.ai_service.service import analyze_email
 
+from app.evaluation.groundedness_v2 import evaluate_groundedness_v2
+
 
 def load_test_split(split_path: str | None = None) -> pd.DataFrame:
     """Load test split dataset."""
@@ -307,6 +309,7 @@ def run_groundedness_evaluation(
     random_seed: int = 42,
     include_ontology_context: bool = True,
     output_dir: Path = Path(__file__).resolve().parents[3] / "reports" / "groundedness_eval",
+    checker: str = "v2",
 ):
     """
     Run complete groundedness evaluation on test set.
@@ -371,7 +374,9 @@ def run_groundedness_evaluation(
             if tag == "ONTOLOGY" and not include_ontology_context:
                 continue  # Skip ontology tags when context is not provided
 
-            support_status = evaluate_groundedness(reason, tag, analysis_result)
+            # v2 = evidence-based checker; v1 is kept only to reproduce historical tables.
+            support_status = (evaluate_groundedness_v2 if checker == "v2" else evaluate_groundedness)(
+                reason, tag, analysis_result)
 
             tag_stats[tag]["total"] += 1
             tag_stats[tag][support_status.lower()] += 1
@@ -444,6 +449,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--no-ontology", action="store_true")
     parser.add_argument("--compare", action="store_true", help="Run with and without ontology context")
+    parser.add_argument("--checker", choices=["v1", "v2"], default="v2",
+                        help="v2 = evidence-based (default); v1 = historical keyword checker")
     args = parser.parse_args()
 
     if args.compare:
@@ -451,15 +458,18 @@ if __name__ == "__main__":
             sample_size=args.sample_size,
             random_seed=args.seed,
             include_ontology_context=True,
+            checker=args.checker,
         )
         run_groundedness_evaluation(
             sample_size=args.sample_size,
             random_seed=args.seed,
             include_ontology_context=False,
+            checker=args.checker,
         )
     else:
         run_groundedness_evaluation(
             sample_size=args.sample_size,
             random_seed=args.seed,
             include_ontology_context=not args.no_ontology,
+            checker=args.checker,
         )
