@@ -90,3 +90,6 @@ Dataset-2025/
 
 # Poster files
 Poster/
+
+# Local data workspace (datasets, caches, reports); see CYBERCANE_WS
+workspace
