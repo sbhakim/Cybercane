@@ -9,6 +9,7 @@ can display without interpretation.
 
 import dns.exception
 import dns.resolver
+from email.utils import parseaddr
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -70,10 +71,11 @@ _IP_LIT_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 # ============================================================================
 
 def _extract_domain(addr: str) -> str:
-    """Extract domain from an email-like address; return "" on malformed input."""
-    if "@" not in addr:
+    """Extract the domain from a sender, plain or display-name form ('Name <user@host>'); "" on malformed input."""
+    _, email_addr = parseaddr(addr or "")
+    if "@" not in email_addr:
         return ""
-    return addr.rsplit("@", 1)[1].lower().strip()
+    return email_addr.rsplit("@", 1)[1].lower().strip().strip(".>")
 
 
 def _hosts_in_text(text: str) -> List[str]:
@@ -164,8 +166,80 @@ def _parse_dmarc_policy(txt: str | None) -> str | None:
     return None
 
 
-def _auth_results_for_domain(domain: str) -> Dict[str, Any]:
+_LOOKUP_FAILED = "unknown"
+
+
+def _rfc_lookup(name: str, rdtype: str):
+    """Resolve name/rdtype. Returns answers, None when the name or type is absent (NXDOMAIN / NoAnswer),
+    or _LOOKUP_FAILED when no authoritative answer was obtained (timeout, SERVFAIL, no nameservers)."""
+    try:
+        return dns.resolver.resolve(name, rdtype)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return None
+    except Exception:
+        return _LOOKUP_FAILED
+
+
+def _txt_with_prefix(answers, prefix: str) -> str | None:
+    for rdata in answers or []:
+        txt = b"".join(rdata.strings).decode("utf-8", "ignore") if hasattr(rdata, "strings") else str(rdata)
+        if txt.lower().startswith(prefix):
+            return txt
+    return None
+
+
+def _org_zone(domain: str) -> str | None:
+    """Organizational zone of a domain via its zone cut (public-suffix-free approximation)."""
+    try:
+        z = dns.resolver.zone_for_name(domain).to_text().rstrip(".").lower()
+        return z if z and z != domain and domain.endswith("." + z) else None
+    except Exception:
+        return None
+
+
+def _auth_results_rfc(domain: str) -> Dict[str, Any]:
+    """Standards-conformant variant (S3): implicit MX (RFC 5321 §5.1), DMARC organizational-domain fallback
+    (RFC 7489 §6.6.3), failed lookups reported as unknown rather than absent. SPF is per-domain (RFC 7208)."""
+    out: Dict[str, Any] = {"policy": "rfc", "unknown": []}
+    mx = _rfc_lookup(domain, "MX")
+    if mx is _LOOKUP_FAILED:
+        out["has_mx"] = None; out["unknown"].append("mx")
+    elif mx:
+        out["has_mx"] = True
+    else:
+        a = _rfc_lookup(domain, "A"); aaaa = None if a and a is not _LOOKUP_FAILED else _rfc_lookup(domain, "AAAA")
+        if (a and a is not _LOOKUP_FAILED) or (aaaa and aaaa is not _LOOKUP_FAILED):
+            out["has_mx"] = True; out["implicit_mx"] = True
+        elif a is _LOOKUP_FAILED and aaaa is _LOOKUP_FAILED:
+            out["has_mx"] = None; out["unknown"].append("mx")
+        else:
+            out["has_mx"] = False
+    txt = _rfc_lookup(domain, "TXT")
+    if txt is _LOOKUP_FAILED:
+        out["spf_present"] = None; out["unknown"].append("spf")
+    else:
+        out["spf_present"] = bool(_txt_with_prefix(txt, "v=spf1"))
+    d = _rfc_lookup(f"_dmarc.{domain}", "TXT")
+    rec = None if d is _LOOKUP_FAILED else _txt_with_prefix(d, "v=dmarc1")
+    if rec is None:
+        org = _org_zone(domain)
+        if org:
+            d2 = _rfc_lookup(f"_dmarc.{org}", "TXT")
+            rec = None if d2 is _LOOKUP_FAILED else _txt_with_prefix(d2, "v=dmarc1")
+            if rec:
+                out["dmarc_from_org_domain"] = org
+    if rec is None and d is _LOOKUP_FAILED:
+        out["dmarc_present"] = None; out["unknown"].append("dmarc")
+    else:
+        out["dmarc_present"] = bool(rec)
+    out["dmarc_policy"] = _parse_dmarc_policy(rec) or "none"
+    return out
+
+
+def _auth_results_for_domain(domain: str, policy: str = "strict") -> Dict[str, Any]:
     """Run MX/SPF/DMARC lookups and return a normalized auth summary."""
+    if policy == "rfc":
+        return _auth_results_rfc(domain)
     has_mx = _has_mx(domain)
     spf = _spf_record(domain)
     dmarc = _dmarc_record(domain)
@@ -212,7 +286,8 @@ RULE_WEIGHTS: Dict[str, int] = {
 def score_email(*, sender: str, subject: str, body: str, url_flag: int,
                 allowed_brand_domains: List[str] | None = None,
                 rule_weights: Dict[str, int] | None = None,
-                enable_dns_checks: bool = True) -> Decision:
+                enable_dns_checks: bool = True,
+                auth_policy: str = "strict") -> Decision:
     """
     Score an email using deterministic rules and return verdict + reasons.
 
@@ -224,6 +299,8 @@ def score_email(*, sender: str, subject: str, body: str, url_flag: int,
         allowed_brand_domains: Optional brand allowlist for lookalike checks
         rule_weights: Optional override for RULE_WEIGHTS
         enable_dns_checks: Toggle MX/SPF/DMARC lookups (tests/offline)
+        auth_policy: "strict" (default, unchanged) or "rfc" (S3: implicit MX, DMARC org-domain fallback,
+            failed lookups treated as unknown)
 
     Returns:
         Decision with verdict, numeric score, reasons, and indicators map
@@ -242,22 +319,31 @@ def score_email(*, sender: str, subject: str, body: str, url_flag: int,
     # DNS/Auth checks (optional, best-effort)
     auth: Dict[str, Any] = {"has_mx": None, "spf_present": None, "dmarc_present": None, "dmarc_policy": None}
     if enable_dns_checks and sender_domain:
-        auth = _auth_results_for_domain(sender_domain)
+        auth = _auth_results_for_domain(sender_domain) if auth_policy == "strict" else _auth_results_for_domain(sender_domain, auth_policy)
         indicators["auth"] = auth
         # Flatten for UI consumption
         indicators["has_mx"] = bool(auth.get("has_mx"))
         indicators["spf_present"] = bool(auth.get("spf_present"))
         indicators["dmarc_present"] = bool(auth.get("dmarc_present"))
         indicators["dmarc_policy"] = auth.get("dmarc_policy") or "none"
-        if not auth.get("has_mx"):
-            score += weights.get("missing_mx", 0)
-            reasons.append("Sender domain missing MX record")
-        if not auth.get("spf_present"):
-            score += weights.get("no_spf", 0)
-            reasons.append("SPF not present for sender domain")
-        if not auth.get("dmarc_present"):
-            score += weights.get("no_dmarc", 0)
-            reasons.append("DMARC not present for sender domain")
+        if auth_policy == "rfc":                               # S3: "unknown" (None) is not penalized
+            for key, w, msg in (("has_mx", "missing_mx", "Sender domain missing MX record"),
+                                ("spf_present", "no_spf", "SPF not present for sender domain"),
+                                ("dmarc_present", "no_dmarc", "DMARC not present for sender domain")):
+                if auth.get(key) is False:
+                    score += weights.get(w, 0); reasons.append(msg)
+                elif auth.get(key) is None:
+                    reasons.append(f"{msg.split(' ')[0] if key != 'has_mx' else 'MX'} could not be checked")
+        else:
+            if not auth.get("has_mx"):
+                score += weights.get("missing_mx", 0)
+                reasons.append("Sender domain missing MX record")
+            if not auth.get("spf_present"):
+                score += weights.get("no_spf", 0)
+                reasons.append("SPF not present for sender domain")
+            if not auth.get("dmarc_present"):
+                score += weights.get("no_dmarc", 0)
+                reasons.append("DMARC not present for sender domain")
 
     # 1) Freemail claiming corporate brand
     if sender_domain in FREEMAIL_DOMAINS:
