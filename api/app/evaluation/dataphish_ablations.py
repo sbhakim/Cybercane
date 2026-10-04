@@ -8,7 +8,7 @@ Tests different configurations:
 
 Usage:
     DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/app \
-    PYTHONPATH=api /home/safayat/anaconda3/envs/cybercane/bin/python \
+    PYTHONPATH=api python \
     api/app/evaluation/dataphish_ablations.py --limit 500
 """
 

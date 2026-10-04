@@ -3,7 +3,7 @@ Load DataPhish training set into vector database with embeddings.
 
 Usage:
     DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/app \
-    PYTHONPATH=api /home/safayat/anaconda3/envs/cybercane/bin/python \
+    PYTHONPATH=api python \
     api/app/scripts/load_dataphish_corpus.py --split train --limit 8000
 """
 
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.db import engine
 from app.models import Message
+from app.privacy.boundary import sanitize_for_external
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ def main():
     with Session(engine) as session:
         for idx, email in enumerate(data):
             # Generate embedding
-            text = f"{email.get('Subject', '')}\n\n{email.get('Body', '')}"
+            text, _ = sanitize_for_external(email.get('Subject', ''), email.get('Body', ''))
 
             try:
                 embedding = generate_embedding(client, text)

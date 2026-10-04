@@ -3,7 +3,7 @@ Tune RAG similarity thresholds on validation set using grid search.
 
 Usage:
     DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/app \
-    PYTHONPATH=api /home/safayat/anaconda3/envs/cybercane/bin/python \
+    PYTHONPATH=api python \
     api/app/evaluation/tune_dataphish_thresholds.py --neighbors 8 --limit 2000
 """
 
