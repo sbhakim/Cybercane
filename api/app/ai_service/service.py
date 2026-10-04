@@ -31,8 +31,9 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
 from app.db import engine
-from app.schemas import EmailIn, ScanOut, AIAnalyzeOut, NeighborOut, RedactionsOut, OntologyAttack
-from app.pipeline.pii import redact
+from app.schemas import EmailIn, ScanOut, AIAnalyzeOut, NeighborOut, RedactionsOut, OntologyAttack, OntologySuggestion
+from app.privacy.boundary import sanitize_field, sanitize_for_external, truncate_for_embedding
+from app.ai_service.scoring import combine, decide, load_risk_thresholds, neighbor_signal
 
 # Neuro-symbolic ontology reasoning
 try:
@@ -133,6 +134,8 @@ def _load_thresholds() -> SimilarityThresholds:
 
 
 THRESHOLDS = _load_thresholds()
+# Calibrated risk thresholds (preferred). Legacy similarity thresholds are used only if unset.
+RISK_THRESHOLDS = load_risk_thresholds()
 
 
 def get_ontology_reasoner() -> Optional[PhishingOntologyReasoner]:
@@ -284,7 +287,7 @@ def _embed_text(text_value: str, model: str = "text-embedding-3-small") -> List[
             raise RuntimeError("DEEPSEEK_EMBEDDING_MODEL is not set for DeepSeek embeddings")
 
     try:
-        resp = client.embeddings.create(model=embed_model, input=[text_value])
+        resp = client.embeddings.create(model=embed_model, input=[truncate_for_embedding(text_value)])
         return resp.data[0].embedding
     except Exception as exc:
         # Automatic fallback to DeepSeek if we were using OpenAI
@@ -298,7 +301,7 @@ def _embed_text(text_value: str, model: str = "text-embedding-3-small") -> List[
             if provider == "deepseek" and not embed_model:
                 raise RuntimeError("DEEPSEEK_EMBEDDING_MODEL is not set for DeepSeek embeddings") from exc
 
-            resp = client.embeddings.create(model=embed_model or model, input=[text_value])
+            resp = client.embeddings.create(model=embed_model or model, input=[truncate_for_embedding(text_value)])
             return resp.data[0].embedding
         raise exc
 
@@ -312,13 +315,14 @@ def _nearest_neighbors(
     """
     Retrieve top-k most similar emails using pgvector cosine similarity.
 
-    Queries the messages table using pgvector's <-> operator for cosine distance.
+    Queries the messages table using pgvector's <=> operator (cosine distance).
     By default, restricts to phishing-labeled examples (label=1) to create a
     pure phishing corpus for similarity matching.
 
     Implementation Note:
-    pgvector computes cosine distance (0=identical, 2=opposite), so we convert
-    to similarity (0-1 range) using: similarity = 1 - distance
+    pgvector's <=> returns cosine distance in [0, 2], so similarity = 1 - distance
+    is cosine similarity in [-1, 1]. Ordering by <=> lets the cosine HNSW
+    indexes (vector_cosine_ops) serve the query.
 
     Args:
         vec: 1536-dim query vector
@@ -333,7 +337,8 @@ def _nearest_neighbors(
         - HNSW index on doc_emb column for efficient search
     """
     # Build WHERE clause to filter by label if needed
-    where_clause = "WHERE doc_emb IS NOT NULL"
+    # Retrieval never sees validation/test rows (split is NULL only in pre-v2 corpora).
+    where_clause = "WHERE doc_emb IS NOT NULL AND (split IS NULL OR split = 'train')"
     if not include_benign:
         where_clause += " AND label = 1"
 
@@ -345,10 +350,10 @@ def _nearest_neighbors(
                subject,
                body,
                redacted_body,
-               1 - (doc_emb <-> :q) AS cosine_similarity
+               1 - (doc_emb <=> :q) AS cosine_similarity
         FROM messages
         {where_clause}
-        ORDER BY doc_emb <-> :q
+        ORDER BY doc_emb <=> :q
         LIMIT :lim
         """
     ).bindparams(sa.bindparam("q", type_=Vector(1536)))
@@ -642,60 +647,20 @@ def _decide_ai_verdict(phase1: ScanOut, phish_neighbors: List[NeighborOut]) -> s
     return phase1.verdict
 
 
-def _compute_ai_score(phase1: ScanOut, neighbors: List[NeighborOut]) -> int:
-    """
-    Generate 0-10 risk score combining semantic and deterministic signals.
-
-    Scoring Algorithm:
-    - Base signal: Weighted combination of top similarity (65%) and avg top-3 (35%)
-    - Deterministic boost: Add influence from Phase 1 verdict
-      * "phishing" → 1.0 boost
-      * "needs_review" → 0.6 boost
-      * "benign" → 0.0 boost
-    - Combined: max(base, 70% base + 30% deterministic)
-    - Scale to 0-10 range
-
-    Design Rationale:
-    The score emphasizes semantic similarity (which captures subtle patterns)
-    while using deterministic signals as a secondary indicator. The max()
-    operation ensures strong semantic signals aren't diluted by weak
-    deterministic signals.
-
-    Args:
-        phase1: Deterministic analysis results
-        neighbors: All retrieved neighbors (phishing + benign if included)
-
-    Returns:
-        Integer score 0-10 where higher indicates greater phishing likelihood
-    """
-    phish_neighbors = [n for n in neighbors if n.label == 1]
-
-    # Extract similarity metrics
-    top_overall = max((n.similarity for n in neighbors), default=0.0)
-    top_phish = max((n.similarity for n in phish_neighbors), default=0.0)
-    avg_top3_phish = (
-        sum(sorted((n.similarity for n in phish_neighbors), reverse=True)[:3])
-        / max(1, min(3, len(phish_neighbors)))
-        if phish_neighbors
-        else 0.0
-    )
-
-    # Compute neighbor-based signal (prefer phishing-labeled neighbors)
-    if phish_neighbors:
-        neighbor_signal = 0.65 * top_phish + 0.35 * avg_top3_phish
+def _compute_ai_risk(phase1: ScanOut, neighbors: List[NeighborOut]) -> float:
+    """Continuous risk in [0, 1]; the formula lives in app.ai_service.scoring."""
+    phish = [n.similarity for n in neighbors if n.label == 1]
+    if phish:
+        n = neighbor_signal(phish)
     else:
-        neighbor_signal = 0.5 * top_overall  # Fallback if no phishing neighbors
+        # No phishing-labeled neighbors: damped overall similarity (legacy behaviour).
+        n = 0.5 * max((nb.similarity for nb in neighbors), default=0.0)
+    return combine(n, phase1.verdict)
 
-    # Map Phase 1 verdict to numeric signal
-    phase1_signal = 1.0 if phase1.verdict == "phishing" else (
-        0.6 if phase1.verdict == "needs_review" else 0.0
-    )
 
-    # Combine signals with max to prevent strong semantic signal dilution
-    combined = max(neighbor_signal, 0.7 * neighbor_signal + 0.3 * phase1_signal)
-    combined = max(0.0, min(1.0, combined))  # Clamp to [0, 1]
-
-    return int(round(combined * 10))
+def _compute_ai_score(phase1: ScanOut, neighbors: List[NeighborOut]) -> int:
+    """0-10 display score: round(10 * risk). See app.ai_service.scoring for the formula."""
+    return int(round(_compute_ai_risk(phase1, neighbors) * 10))
 
 
 # ============================================================================
@@ -738,6 +703,7 @@ def analyze_email(
     # STEP 0: Ontology-based Semantic Inference (NEURO-SYMBOLIC)
     # ========================================================================
     ontology_attacks: Optional[List[OntologyAttack]] = None
+    ontology_suggestions: Optional[List[OntologySuggestion]] = None
     ontology_explanation: Optional[List[str]] = None
 
     reasoner = get_ontology_reasoner()
@@ -746,25 +712,23 @@ def analyze_email(
             # Convert Phase 1 indicators to ontology format
             ontology_indicators = indicators_to_ontology_format(phase1.indicators)
 
-            # Infer attack types using description logic reasoning
-            inferred_attacks = reasoner.infer_attack_types(ontology_indicators, min_confidence=0.3)
-
-            if inferred_attacks:
-                # Convert to schema format
-                ontology_attacks = [
-                    OntologyAttack(attack_type=name, confidence=conf)
-                    for name, conf in inferred_attacks
-                ]
-
-                # Generate explanation chain for top attack
-                top_attack = inferred_attacks[0][0]
-                ontology_explanation = reasoner.get_explanation_chain(
-                    ontology_indicators,
-                    top_attack
+            # Rule matching against the ontology's defining axioms: classes are
+            # asserted only when every premise holds; partial matches are hints.
+            res = reasoner.classify(ontology_indicators)
+            if res["entailed"]:
+                ontology_attacks = (
+                    [OntologyAttack(attack_type=n, confidence=1.0) for n in res["entailed"]]
+                    + [OntologyAttack(attack_type=n, confidence=1.0, inherited=True) for n in res["inherited"]]
                 )
-
-                logger.info(f"Ontology inferred {len(ontology_attacks)} attack types, "
-                           f"top: {top_attack} ({inferred_attacks[0][1]*100:.1f}%)")
+            if res["suggested"]:
+                ontology_suggestions = [
+                    OntologySuggestion(attack_type=n, coverage=c, missing=m) for n, c, m in res["suggested"]
+                ]
+            top = res["entailed"][0] if res["entailed"] else (
+                res["suggested"][0][0] if res["suggested"] else None)
+            if top:
+                ontology_explanation = reasoner.get_explanation_chain(ontology_indicators, top)
+            logger.info(f"Ontology: {len(res['entailed'])} asserted, {len(res['suggested'])} partial")
         except Exception as e:
             logger.warning(f"Ontology inference failed: {e}")
             # Graceful degradation: continue without ontology
@@ -772,7 +736,8 @@ def analyze_email(
     # ========================================================================
     # STEP 1: Neural Embedding & Retrieval (continues as before)
     # ========================================================================
-    doc_text = _combine_subject_body(payload.subject, payload.body)
+    # Privacy boundary: only sanitized text is embedded by the external provider.
+    doc_text, _privacy_report = sanitize_for_external(payload.subject, payload.body)
 
     try:
         vec = _embed_text(doc_text)
@@ -804,11 +769,15 @@ def analyze_email(
             ai_label=ai_label,
             ai_score=phase1.score,
             ai_reasons=ai_reasons,
-            ontology_attacks=ontology_attacks,  # NEW: Ontology inference
-            ontology_explanation=ontology_explanation,  # NEW: Reasoning chain
+            decision_rule="deterministic_fallback",
+            degraded=True,
+            ontology_attacks=ontology_attacks,  # ontology inference
+            ontology_suggestions=ontology_suggestions,
+        ontology_explanation=ontology_explanation,  # reasoning chain
         )
 
     # Retrieve similar emails from vector database
+    retrieval_failed = False
     if neighbors_k <= 0:
         neighbors = []
     else:
@@ -817,11 +786,13 @@ def analyze_email(
         except Exception as exc:
             logger.warning(f"Neighbor retrieval failed; proceeding without neighbors: {exc}")
             neighbors = []
+            retrieval_failed = True
 
     # Redact PII from neighbor examples to prevent data exposure
     for neighbor in neighbors:
-        redacted_subject, subject_counts = redact(neighbor.subject or "")
-        redacted_body, body_counts = redact(neighbor.body or "")
+        redacted_subject, subject_rep = sanitize_field(neighbor.subject)
+        redacted_body, body_rep = sanitize_field(neighbor.body)
+        subject_counts, body_counts = subject_rep.counts, body_rep.counts
 
         # Merge redaction counts from subject and body
         merged_keys = set(subject_counts.keys()) | set(body_counts.keys())
@@ -837,13 +808,19 @@ def analyze_email(
     phish_neighbors = [n for n in neighbors if n.label == 1]
 
     # Compute verdict without exposing it to LLM (prevents label leakage)
-    ai_verdict = _decide_ai_verdict(phase1, phish_neighbors)
+    ai_risk = _compute_ai_risk(phase1, neighbors)
+    if RISK_THRESHOLDS is not None:
+        ai_verdict = decide(ai_risk, phase1.verdict, RISK_THRESHOLDS)
+        decision_rule = "calibrated"
+    else:
+        ai_verdict = _decide_ai_verdict(phase1, phish_neighbors)
+        decision_rule = "legacy"
     ai_label = 1 if ai_verdict == "phishing" else 0
 
     # Generate human-readable explanations using LLM
     ai_reasons = _summarize_reasons_with_llm(
-        subject=payload.subject,
-        body=phase1.redacted_body or payload.body,
+        subject=sanitize_field(payload.subject)[0],
+        body=sanitize_field(payload.body)[0],
         phase1=phase1,
         neighbors=neighbors,
         ontology_attacks=ontology_attacks,
@@ -865,7 +842,7 @@ def analyze_email(
     if conclusion not in ai_reasons:
         ai_reasons.append(conclusion)
 
-    ai_score = _compute_ai_score(phase1, neighbors)
+    ai_score = int(round(ai_risk * 10))
 
     return AIAnalyzeOut(
         phase1=phase1,
@@ -875,6 +852,10 @@ def analyze_email(
         ai_label=ai_label,
         ai_score=ai_score,
         ai_reasons=ai_reasons,
-        ontology_attacks=ontology_attacks,  # NEW: Ontology inference
-        ontology_explanation=ontology_explanation,  # NEW: Reasoning chain
+        ontology_attacks=ontology_attacks,  # ontology inference
+        ontology_suggestions=ontology_suggestions,
+        ontology_explanation=ontology_explanation,  # reasoning chain
+        ai_risk=ai_risk,
+        decision_rule=decision_rule,
+        degraded=retrieval_failed,
     )

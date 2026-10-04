@@ -68,9 +68,20 @@ class NeighborOut(BaseModel):
 
 
 class OntologyAttack(BaseModel):
-    """Ontology-inferred attack classification."""
+    """
+    Attack class asserted by the ontology: every premise of its defining
+    axiom holds (confidence is always 1.0), or it is a superclass of one.
+    """
     attack_type: str
     confidence: float
+    inherited: bool = False
+
+
+class OntologySuggestion(BaseModel):
+    """Partial rule match; NOT asserted. coverage = satisfied/required premises."""
+    attack_type: str
+    coverage: float
+    missing: List[str]
 
 
 class AIAnalyzeOut(BaseModel):
@@ -83,6 +94,14 @@ class AIAnalyzeOut(BaseModel):
     ai_score: int
     ai_reasons: List[str]
 
+    # Continuous risk in [0, 1] (ranking score, not a probability), the rule that
+    # produced ai_verdict ("calibrated" or "legacy"), and whether any external
+    # step failed so the result fell back to deterministic analysis.
+    ai_risk: Optional[float] = None
+    decision_rule: Optional[str] = None
+    degraded: bool = False
+
     # Neuro-symbolic ontology reasoning (NEW)
     ontology_attacks: Optional[List[OntologyAttack]] = None
+    ontology_suggestions: Optional[List[OntologySuggestion]] = None
     ontology_explanation: Optional[List[str]] = None

@@ -1,0 +1,10 @@
+{
+  "risk_threshold_phishing": 0.5362105369567871,
+  "risk_threshold_review": 0.4601001739501953,
+  "fpr_budget": 0.01,
+  "review_budget": 0.08,
+  "calibrated_on": "nazario+spamassassin validation, split seed 42",
+  "n_validation_negatives": 409,
+  "note": "Calibrated on public corpora; realized FPR depends on how representative this benign set is of deployment mail.",
+  "created": "2026-09-25T14:25:50"
+}

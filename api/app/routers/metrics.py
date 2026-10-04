@@ -150,7 +150,9 @@ def _embed_doc(subject: str, body: str, model: str) -> List[float]:
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
 
-    text = f"{subject or ''}\n\n{body or ''}".strip()[:8000]
+    from ..privacy.boundary import sanitize_for_external
+
+    text, _ = sanitize_for_external(subject, body)
     client = OpenAI(api_key=api_key)
     resp = client.embeddings.create(model=model, input=[text])
     return list(resp.data[0].embedding)
@@ -193,10 +195,10 @@ def metrics_similar(req: SimilarIn) -> Dict[str, Any]:
                   score,
                   reasons,
                   indicators,
-                  1 - (doc_emb <-> :q) AS similarity
+                  1 - (doc_emb <=> :q) AS similarity
                 FROM messages
                 WHERE doc_emb IS NOT NULL AND label = 1
-                ORDER BY doc_emb <-> :q
+                ORDER BY doc_emb <=> :q
                 LIMIT :k
                 """
             ).bindparams(sa.bindparam("q", type_=Vector(1536)))
