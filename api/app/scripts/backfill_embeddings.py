@@ -6,6 +6,8 @@ from typing import Iterable, List, Tuple
 
 import sqlalchemy as sa
 from sqlalchemy import text
+
+from app.privacy.boundary import sanitize_field, sanitize_for_external
 from sqlalchemy.engine import Connection
 
 from pgvector.sqlalchemy import Vector
@@ -19,26 +21,26 @@ def build_inputs_for_target(rows: List[tuple], target: str) -> Tuple[List[int], 
 
     if target == "doc":
         for _id, subject, body in rows:
-            text_value = f"{subject or ''}\n\n{body or ''}".strip()
+            text_value, _ = sanitize_for_external(subject, body)
             if text_value:
                 ids.append(_id)
                 # keep a reasonable cap to avoid oversized payloads
                 inputs.append(text_value[:8000])
     elif target == "subject":
         for _id, subject in rows:
-            text_value = (subject or "").strip()
+            text_value = sanitize_field(subject)[0].strip()
             if text_value:
                 ids.append(_id)
                 inputs.append(text_value[:8000])
     elif target == "body":
         for _id, body in rows:
-            text_value = (body or "").strip()
+            text_value = sanitize_field(body)[0].strip()
             if text_value:
                 ids.append(_id)
                 inputs.append(text_value[:8000])
     elif target == "url":
         for _id, url in rows:
-            text_value = (url or "").strip()
+            text_value = sanitize_field(url)[0].strip()
             if text_value:
                 ids.append(_id)
                 inputs.append(text_value[:8000])
