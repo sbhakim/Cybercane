@@ -20,6 +20,7 @@ from typing import Dict, List, Tuple
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from app.privacy.boundary import sanitize_for_external
 
 
 def get_openai_embedding(text: str, model: str = "text-embedding-3-small") -> List[float]:
@@ -106,13 +107,15 @@ def check_contamination(
     print(f"\n  Checking against corpus ({len(corpus_df)} samples)...")
 
     # Combine subject + body for both datasets
-    synthetic_texts = (
-        synthetic_df["subject"].fillna("") + " " + synthetic_df["body"].fillna("")
-    ).tolist()
+    synthetic_texts = [
+        sanitize_for_external(s, b)[0]
+        for s, b in zip(synthetic_df["subject"].fillna(""), synthetic_df["body"].fillna(""))
+    ]
 
-    corpus_texts = (
-        corpus_df["subject"].fillna("") + " " + corpus_df["body"].fillna("")
-    ).tolist()
+    corpus_texts = [
+        sanitize_for_external(s, b)[0]
+        for s, b in zip(corpus_df["subject"].fillna(""), corpus_df["body"].fillna(""))
+    ]
 
     # Embed both
     print(f"  Embedding synthetic samples...")

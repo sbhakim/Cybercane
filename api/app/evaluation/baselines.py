@@ -11,6 +11,8 @@ from typing import List, Dict, Tuple
 
 import pandas as pd
 
+from app.privacy.boundary import sanitize_field
+
 
 @dataclass
 class Metrics:
@@ -143,10 +145,15 @@ def _detect_phi_patterns(text: str) -> Tuple[int, bool]:
 def _gpt4_direct_baseline(
     test_text: pd.Series,
     model: str = "gpt-4o-mini",
-    rate_limit_delay: float = 0.5
+    rate_limit_delay: float = 0.5,
+    redact_input: bool = True,
 ) -> Tuple[pd.Series, PrivacyCostMetrics]:
     """
-    GPT-4 direct baseline: send full unredacted emails to GPT-4.
+    Direct LLM baseline: zero-shot classification by an external model.
+
+    By default the text passes the same privacy boundary as CyberCane
+    (redact_input=True). The raw condition is for measuring exposure on
+    public corpora only.
 
     Demonstrates privacy/cost trade-offs of direct LLM use without CyberCane's
     privacy-preserving architecture.
@@ -195,6 +202,9 @@ def _gpt4_direct_baseline(
     print(f"Rate limit delay: {rate_limit_delay}s between calls")
 
     for idx, email_text in enumerate(test_text, 1):
+        if redact_input:
+            email_text = sanitize_field(email_text)[0]
+
         # Track privacy metrics
         chars_transmitted = len(email_text)
         total_chars += chars_transmitted
@@ -295,6 +305,11 @@ def main() -> None:
         default=0.5,
         help="Delay between GPT-4 API calls in seconds (default: 0.5)",
     )
+    parser.add_argument(
+        "--gpt4-raw",
+        action="store_true",
+        help="Send unredacted text to the LLM baseline (public corpora only)",
+    )
     args = parser.parse_args()
 
     train_df = pd.read_csv(args.train)
@@ -331,9 +346,11 @@ def main() -> None:
             gpt4_preds, privacy_cost_metrics = _gpt4_direct_baseline(
                 test_text,
                 model=args.gpt4_model,
-                rate_limit_delay=args.gpt4_delay
+                rate_limit_delay=args.gpt4_delay,
+                redact_input=not args.gpt4_raw,
             )
-            rows.append(_metrics_from_preds(test_labels, gpt4_preds, f"gpt4_direct_{args.gpt4_model}"))
+            suffix = "raw" if args.gpt4_raw else "redacted"
+            rows.append(_metrics_from_preds(test_labels, gpt4_preds, f"llm_direct_{args.gpt4_model}_{suffix}"))
         except RuntimeError as exc:
             print(f"GPT-4 baseline failed: {exc}")
 
