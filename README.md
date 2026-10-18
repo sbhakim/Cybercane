@@ -193,6 +193,12 @@ DataPhish 2025 splits (`dataphish_train.jsonl`, `dataphish_test.jsonl`) are incl
 
 ---
 
+## Human Annotation
+
+Explanation and redaction audits were labeled in our [annotation app](https://cybercane-annotations.web.app); [demo mode](https://cybercane-annotations.web.app/?demo) needs no sign-in.
+
+---
+
 ## Repository Layout
 
 ```
