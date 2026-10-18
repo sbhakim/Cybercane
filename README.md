@@ -1,195 +1,53 @@
-# CyberCane: Neuro-Symbolic RAG for Privacy-Preserving Phishing Detection
+<p align="center">
+  <img src="docs/images/logo_cybercane.png" alt="CyberCane" width="420"/>
+</p>
 
-> **99.5% precision · 0.16% FPR · 542× optimistic ROI · 0% PHI exposure**
+# CyberCane: Privacy-Bounded Neuro-Symbolic Phishing Detection under Distribution Shift
 
-CyberCane is a privacy-first phishing detection framework that combines deterministic symbolic rules, retrieval-augmented generation (RAG), and formal OWL ontology reasoning to deliver transparent, auditable decisions in privacy-critical domains such as healthcare and finance.
+> **Calibrated for a 1% false-positive budget on older public mail, trained detectors realize 20–23% FPR on 2025 email. CyberCane realizes 5.4% at 86% recall, screening each email locally in 0.20 s.**
 
-Research paper — preprint available on arXiv: https://arxiv.org/abs/2604.23563
+Organizations usually calibrate phishing detectors on public corpora, because privacy rules make their own labeled legitimate mail hard to collect. CyberCane scores an email only by its similarity to known phishing in a redacted, training-only index, plus deterministic rules, and calibrates its verdicts to an explicit false-positive budget. Because legitimate mail never enters the score, only the threshold depends on the calibration source.
+
+Paper (preprint): https://arxiv.org/abs/2604.23563
+
+> **Code for the current paper** is on the [`calibration-study`](https://github.com/sbhakim/Cybercane/tree/calibration-study) branch. Earlier results in this repository used a random split of DataPhish 2025, which the paper shows leaks 96% of its test set; use the group-aware splits on that branch instead.
 
 ---
 
 ## Architecture
 
 <p align="center">
-  <img src="dataset_cybercane/cybercane_architecture.jpg" alt="CyberCane Architecture" width="820"/>
+  <img src="docs/images/cybercane_architecture_v3.png" alt="CyberCane architecture" width="820"/>
 </p>
 
-**Phase 1 — Deterministic Symbolic Analysis:** Lightweight DNS/MX/SPF/DMARC checks, URL heuristics, urgency and credential cues produce risk scores with instant verifiable explanations.
-
-**Phase 2 — Privacy-Preserving RAG:** PII is redacted via `pii.py` before any external API call. Redacted content is embedded (text-embedding-3-small, 1536-d), retrieved against a phishing-only HNSW corpus (k=8), and classified by GPT-4.1-mini conditioned on Phase 1 indicators and PhishOnt ontology context.
-
-**PhishOnt — OWL Ontology:** Maps symbolic indicators to 8 attack types (CredentialTheft, PrescriptionFraud, etc.) via description-logic axioms, generating verifiable reasoning chains for audit trails.
+- **Phase 1 (on premises, raw email):** weighted rules for sender authentication (MX, SPF, DMARC), lookalike domains, suspicious URLs, urgency and credential requests produce indicators, a score and a rule verdict.
+- **PhishOnt:** an OWL ontology asserts attack classes only when all of their premises hold, and otherwise only suggests them.
+- **Privacy boundary:** a single redaction function masks personal identifiers before any text leaves the machine.
+- **Phase 2 (retrieval and risk):** the redacted email is embedded and compared with a phishing-only HNSW index; similarity and the rule score combine into a risk score with thresholds calibrated to an FPR budget.
+- **Explanations:** an LLM writes tagged explanations, and every claim is checked against the stored evidence. The verdict never depends on this text.
 
 ---
 
 ## Key Results
 
-### Detection performance
+All experiments were preregistered in a dated log before they were run. Means over five seeds with cluster-bootstrap 95% CIs; full tables are in the paper.
 
-| Dataset (test) | Method | Precision | Recall | F1 | FPR |
-|---|---|---|---|---|---|
-| Nazario + SpamAssassin (n=1,110) | Phase 1 (rules, threshold=2) | 83.0% | 17.8% | 0.293 | 2.9% |
-| Nazario + SpamAssassin (n=1,110) | **Phase 2 RAG (k=8)** | **99.5%** | **37.2%** | **0.541** | **0.16%** |
-| DataPhish 2025 (n=2,337) | Phase 1 (rules) | 93.4% | 20.5% | 0.336 | — |
-| DataPhish 2025 (n=2,337) | **Phase 2 RAG (k=8)** | **98.2%** | **99.1%** | **0.987** | — |
+**Benign-distribution shift** (calibrated on SpamAssassin 2002, deployed on DataPhish 2025, 1% FPR budget):
 
-Phase 2 RAG delivers a **78.6-point recall gain over Phase 1** within the CyberCane pipeline on AI-generated threats (DataPhish 2025). On Nazario/SpamAssassin the 37.2% recall reflects a deliberate FPR-first threshold; Aggressive mode recovers 44.6% recall while maintaining 99.5% precision and 0.16% FPR.
+| Method | Realized FPR | Recall |
+|---|---|---|
+| TF-IDF logistic regression | 22.9% | 98.2% |
+| Embedding logistic regression | 20.2% | 99.7% |
+| Two-class kNN | 22.5% | 100.0% |
+| **CyberCane** | **5.4%** | **86.4%** |
+| Zero-shot LLM (gpt-oss-120b) | 0.7% | 56.4% |
 
-### Privacy-constrained baseline comparison
-
-| Method | Precision | Recall | F1 | FPR | Cost/Email | PHI Exposure |
-|---|---|---|---|---|---|---|
-| **CyberCane RAG (k=8)** | **99.5%** | 37.2% | 0.541 | **0.16%** | $0.0017 | **0%** |
-| TF-IDF LR + Redaction (same `pii.py`) | 98.8% | 97.4% | 0.981 | 0.98% | $0 | **0%** |
-| TF-IDF LR (no redaction) | 98.6% | 97.4% | 0.980 | 1.14% | $0 | ~53% |
-| GPT-4 Direct (gpt-4o-mini, unredacted) | 93.2% | 99.0% | 0.960 | 5.9% | $0.0001 | 53.2% |
-
-CyberCane's value over the privacy-constrained TF-IDF baseline is **6× lower FPR** (0.16% vs 0.98%), PhishOnt verifiable reasoning chains, and tunable operating points — none available in TF-IDF.
-
-### Robustness across 18 creator sources (DataPhish 2025, n=2,300)
-
-| Group | N | Precision | Recall | F1 |
-|---|---|---|---|---|
-| Human-written | 559 | 97.5% | 99.5% | 98.5% |
-| LLM-generated (17 models) | 1,741 | 98.4% | 99.1% | 98.7% |
-| DeepSeek-Chat | 602 | 99.1% | 99.1% | 99.1% |
-| OpenAI GPT family | 596 | 97.1% | 99.3% | 98.2% |
-| Amazon Nova / Grok / Codestral | 156 | 100.0% | 100.0% | 100.0% |
-| **Overall Phase 2 RAG** | **2,300** | **98.1%** | **99.2%** | **98.7%** |
-
-F1 range across all 18 creator sources: **0.976–1.000**. Detection is statistically indistinguishable between human-written and LLM-generated phishing.
-
-### Operating point flexibility
-
-| Mode | Precision | Recall | F1 | FPR | Use Case |
-|---|---|---|---|---|---|
-| Conservative | 99.3% | 29.5% | 0.455 | 0.16% | High-stakes clinical |
-| Baseline (pipeline default) | 99.5% | 37.2% | 0.541 | 0.16% | Current deployment |
-| Balanced | 99.5% | 40.0% | 0.571 | 0.16% | General healthcare |
-| Moderate | 99.5% | 42.2% | 0.593 | 0.16% | High-volume screening |
-| Aggressive | 99.5% | 44.6% | 0.616 | 0.16% | Maximum coverage |
-
-All five modes share the same 0.16% FPR via the Phase 1 high-confidence threshold.
-
----
-
-## Notable Findings
-
-**Layered defense against rule evasion.** Of the 1,589 phishing emails in the DataPhish 2025 test set, 79.5% (n=1,264) score zero in Phase 1 — attacks with valid DNS infrastructure and no urgency cues that entirely bypass symbolic rules. Phase 2 RAG correctly classifies **99.0% of these Phase 1-evaded emails**, leaving a combined two-phase miss rate of only **0.8%**. This demonstrates the intended architectural property: the symbolic layer handles flagrant violations instantly; the neural layer provides semantic recovery for attacks that deliberately avoid rule triggers.
-
-**Active PII redaction.** Across 2,337 DataPhish 2025 test emails, **50.7% contained at least one redacted PII field** (mean 1.63 items/email). LLM-generated emails averaged 1.73 items/email versus 1.30 for human-written — yet detection F1 remained 0.987 for both groups, confirming that semantic classification is preserved under active masking.
-
-**PhishOnt confidence discriminability.** Despite similar binary activation rates across classes, phishing activations carry a mean ontology confidence of 54.6% versus 52.8% for benign (+1.84pp). 85.5% of benign activations fall *below* the typical phishing confidence level, confirming PhishOnt is discriminative at the confidence level even when binary activation rates appear similar.
-
-**Healthcare ROI.** At 37.2% recall and 10,000 emails/day, the system detects ~164 phishing attacks daily ($1,506/day operational cost), yielding a **542× optimistic ROI**. At DataPhish 2025 recall (99.1%), optimistic and conservative ROI converge to 1,450× and 1,437× respectively.
-
----
-
-## System Overview
-
-```
-Email Input
-    │
-    ▼
-Phase 1: Deterministic Symbolic Analysis
-  ├─ DNS/MX/SPF/DMARC checks
-  ├─ URL obfuscation patterns
-  ├─ Urgency & credential cues
-  └─ PhishOnt OWL inference → attack type + reasoning chain
-    │
-    ▼ (if score < threshold → escalate to Phase 2)
-    │
-[PII Redaction — pii.py — before any external call]
-    │
-    ▼
-Phase 2: Neural RAG Classification
-  ├─ text-embedding-3-small (1536-d) embedding
-  ├─ HNSW vector search — phishing-only corpus (k=8)
-  ├─ GPT-4.1-mini conditioned on: redacted email + Phase 1 indicators
-  │   + PhishOnt attack types + retrieved examples
-  └─ Similarity-driven verdict (top_sim ≥ 0.40, avg_top3 ≥ 0.35)
-    │
-    ▼
-Final verdict + confidence score + tagged explanation
-```
-
-**Stack:** FastAPI (Python 3.11) · PostgreSQL 17 + pgvector · Next.js 15 · OpenAI API (text-embedding-3-small, gpt-4.1-mini)
-
----
-
-## Quick Start
-
-**Docker (recommended — 5 minutes)**
-```bash
-git clone https://github.com/sbhakim/Cybercane.git && cd Cybercane
-cp .env.example .env          # add OPENAI_API_KEY
-docker compose up --build
-# Web UI: http://localhost:3000 | API docs: http://localhost:8000/docs
-```
-
-**Local development**
-```bash
-conda env create -f environment.yml && conda activate cybercane
-export OPENAI_API_KEY="sk-..."
-export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/app"
-docker compose up -d db
-cd api && python -m uvicorn app.main:app --reload   # Terminal 1
-cd web && npm install && npm run dev                # Terminal 2
-```
-
-**API endpoints**
-```bash
-# Phase 1 only — no API key required
-curl -X POST http://localhost:8000/scan \
-  -H "Content-Type: application/json" \
-  -d '{"sender":"alert@suspicious.com","subject":"Urgent: verify account","body":"Click http://bit.ly/abc","url":1}'
-
-# Phase 1 + Phase 2 RAG — requires OPENAI_API_KEY
-curl -X POST http://localhost:8000/ai/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"sender":"alert@suspicious.com","subject":"Urgent: verify account","body":"Click http://bit.ly/abc","url":1}'
-```
-
-| Endpoint | Description |
-|---|---|
-| `GET /health` | Service liveness check |
-| `POST /scan` | Phase 1 symbolic analysis only |
-| `POST /ai/analyze` | Full dual-phase pipeline with explanation |
-
----
-
-## Reproducing Results
-
-Evaluation scripts in `reports_cybercane/` reproduce all main-paper tables without external dependencies beyond the public datasets.
-
-```bash
-cd reports_cybercane/
-
-# Bootstrap confidence intervals (Table 19)
-python bootstrap_ci.py
-
-# McNemar χ² significance tests (Phase 1 vs Phase 2)
-python statistical_significance.py
-
-# F1-maximizing threshold grid search
-python tune_thresholds.py
-
-# Daily operational cost-benefit analysis (Table 7)
-python cost_benefit_analysis.py
-
-# Deterministic pipeline evaluator on test split
-python eval_test_split.py
-
-# TF-IDF + redacted baseline comparison (Table 4)
-# Run from api/ with conda cybercane env:
-python -m app.evaluation.baselines
-
-# PhishOnt confidence discriminability (Section 5.2)
-python -m app.evaluation.ontology_coverage
-```
-
-Public datasets required in `datasets/`: `Nazario.clean.csv`, `SpamAssassin.csv`.  
-DataPhish 2025 splits (`dataphish_train.jsonl`, `dataphish_test.jsonl`) are included in `dataset_cybercane/`.
+- Trained baselines overrun the budget **9–94×** across three calibration sources; CyberCane reduces the overrun **2.7–6.1×**. Baselines using the same embeddings fail equally, so the decision rule, not the embedding model, is the cause.
+- The failure is **calibration transfer, not ranking**: with thresholds chosen on the deployment mail, the same classifiers separate phishing from legitimate mail well.
+- **Segment-level scoring** (the email's most phishing-like part) lowers the realized FPR a further 1.2–2.7× and withstands benign padding.
+- **Cost:** 0.20 s per email with a local embedder and no text sent out; a zero-shot Llama 3.3 70B ranks better at strict FPR but is 14–24× slower and must receive each email.
+- **LLM rewriting** does not evade embedding-based detectors; the shift in legitimate mail drives the overrun.
+- **Redaction:** six structured identifier types are removed in every planted case; person names are the weak point (94.4% recall after a cue, 79.8% without one).
 
 ---
 
@@ -199,41 +57,43 @@ Explanation and redaction audits were labeled in our [annotation app](https://cy
 
 ---
 
-## Repository Layout
+## Quick Start
 
+```bash
+git clone https://github.com/sbhakim/Cybercane.git && cd Cybercane
+cp .env.example .env          # add OPENAI_API_KEY for Phase 2 and explanations
+docker compose up --build
+# Web UI: http://localhost:3000 | API docs: http://localhost:8000/docs
 ```
-Cybercane/
-├── api/                        # FastAPI backend
-│   └── app/
-│       ├── pipeline/
-│       │   ├── pii.py          # PII redaction (email, phone, SSN, CC, DOB)
-│       │   ├── rag.py          # Phase 2 RAG pipeline
-│       │   └── symbolic.py     # Phase 1 rule engine
-│       ├── evaluation/
-│       │   ├── baselines.py    # TF-IDF + redacted baseline comparison
-│       │   └── ontology_coverage.py  # PhishOnt coverage + confidence analysis
-│       └── ontology/           # PhishOnt OWL files
-├── web/                        # Next.js frontend
-├── db/                         # PostgreSQL + pgvector initialization
-├── dataset_cybercane/          # Tracked reproducibility artifacts
-│   ├── dataphish_train.jsonl   # DataPhish 2025 train split
-│   ├── dataphish_test.jsonl    # DataPhish 2025 test split (n=2,337)
-│   ├── Nazario.clean.csv       # Cleaned Nazario phishing corpus
-│   └── cybercane_architecture.jpg
-├── reports_cybercane/          # Standalone evaluation scripts
-│   ├── bootstrap_ci.py
-│   ├── cost_benefit_analysis.py
-│   ├── statistical_significance.py
-│   ├── tune_thresholds.py
-│   └── eval_test_split.py
-└── environment.yml             # Conda environment (Python 3.11)
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Service liveness check |
+| `POST /scan` | Phase 1 rules only (no API key needed) |
+| `POST /ai/analyze` | Full pipeline with a checked explanation |
+
+---
+
+## Reproducing the Paper
+
+On the [`calibration-study`](https://github.com/sbhakim/Cybercane/tree/calibration-study) branch, from the repository root:
+
+```bash
+pip install -r api/requirements.txt
+PYTHONPATH=api python -m app.evaluation.build_splits_v2 --seeds 42 1 2 3 4      # group-aware splits
+PYTHONPATH=api python -m app.evaluation.embed_cache_v2 --stage sanitize          # redaction
+PYTHONPATH=api python -m app.evaluation.embed_cache_v2 --stage embed --model openai:text-embedding-3-small
+PYTHONPATH=api python -m app.evaluation.replicate_c1_decontam                    # main shift result
+PYTHONPATH=api python -m app.evaluation.r2_benign_shift                          # three calibration sources
 ```
+
+Further experiments (style shift, padding, local embedder, LLM comparators, planted-identifier audit, annotation scoring) are in `api/app/evaluation/`, each with its usage line at the top of the file. Public corpora: Nazario, SpamAssassin, CEAS 2008, Ling-Spam and DataPhish 2025.
 
 ---
 
 ## Research Lineage
 
-This repository extends the prototype at [UMBC Hackathon](https://github.com/pawelsloboda5/UMBC-hackathon) into a full neuro-symbolic research pipeline with formal ontology reasoning, privacy-by-design architecture, and research-grade evaluation workflows.
+This repository extends the prototype at [UMBC Hackathon](https://github.com/pawelsloboda5/UMBC-hackathon) into a neuro-symbolic research pipeline with ontology reasoning, a privacy boundary and preregistered evaluation.
 
 ---
 
@@ -241,15 +101,15 @@ This repository extends the prototype at [UMBC Hackathon](https://github.com/paw
 
 ```bibtex
 @article{hakim2026cybercane,
-  author    = {S. B. Hakim and A. Afzal and Q. Zhao and V. Majmundar and P. Sloboda and H. H. Song},
-  title     = {{CyberCane}: Neuro-Symbolic {RAG} for Privacy-Preserving Phishing Detection with Formal Ontology Reasoning},
-  journal   = {arXiv preprint arXiv:2604.23563},
-  year      = {2026},
-  note      = {[Online]. Available: \url{https://arxiv.org/abs/2604.23563}},
-  primaryclass = {cs.CR}
+  author        = {S. B. Hakim and A. Afzal and Q. Zhao and V. Majmundar and P. Sloboda and H. H. Song},
+  title         = {{CyberCane}: A Privacy-Bounded Neuro-Symbolic Retrieval Framework for Phishing Detection under Distribution Shift},
+  journal       = {arXiv preprint arXiv:2604.23563},
+  year          = {2026},
+  url           = {https://arxiv.org/abs/2604.23563},
+  primaryclass  = {cs.CR}
 }
 ```
 
 ---
 
-For questions or collaboration, open an issue or reach out via email — address: `safayat [dot] b [dot] hakim [at] gmail [dot] com`
+For questions or collaboration, open an issue or reach out via email: `safayat [dot] b [dot] hakim [at] gmail [dot] com`
